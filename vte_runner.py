@@ -10,9 +10,7 @@ from keras.utils import generic_utils
 import numpy as np
 import tensorflow as tf
 
-sys.path.append('../evolving_wilds')
-from cnn_utils import experiment_engine
-
+import experiment_engine
 
 voxelmorph_labels = [0,
 					 16,  # brain stem
@@ -25,9 +23,9 @@ voxelmorph_labels = [0,
 					 28, 60,  # ventral dc,
 					 11, 50,  # caudate,
 					 13, 52,  # pallidum,
-					 17, 53,  # hippo
+					 17, 53,  # hippocampus
 					 14, 15,  # 3rd 4th vent
-					 18, 54,  # amyg
+					 18, 54,  # amygdala
 					 24,  # csf
 					 3, 42,  # cerebral cortex
 					 31, 63,  # choroid plexus
@@ -35,162 +33,13 @@ voxelmorph_labels = [0,
 
 
 named_vte_data_params = {
-	'adni-1000-csts2': {
-		'dataset_name': 'adni',
-		'source_name': 'centroidsubj2',
-		'target_name': 'subjs',
-		'unnormalized': True,
-		'masked': True,
-		'n_shot': 1,
-		'use_atlas_as_source': False,
-		'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
-		'img_shape': (160, 192, 224, 1),
-		'pred_img_shape': (160, 192, 1),
-		'aug_img_shape': (160, 192, 224, 1),
-		'n_unlabeled': 1000,
-		'n_validation': 50,
-		'load_vols': False,
-		'aug_in_gen': True,
-		'n_vte_aug': None,
-		'n_flow_aug': None,
-		'use_labels': voxelmorph_labels,
-		'final_test': False,
-		'warp_labels': True,
-		'n_dims': 3,  # TODO: deprecate?
-	},
-	'adni-10-csts2': {
-		'dataset_name': 'adni',
-		'source_name': 'centroidsubj2',
-		'target_name': 'subjs',
-		'unnormalized': True,
-		'masked': True,
-		'n_shot': 1,
-		'use_atlas_as_source': False,
-		'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
-		'img_shape': (160, 192, 224, 1),
-		'pred_img_shape': (160, 192, 1),
-		'aug_img_shape': (160, 192, 224, 1),
-		'n_unlabeled': 10,
-		'n_validation': 50,
-		'load_vols': True,
-		'aug_in_gen': True,
-		'n_vte_aug': None,
-		'n_flow_aug': None,
-		'use_labels': voxelmorph_labels,
-		'final_test': False,
-		'warp_labels': True,
-		'n_dims': 3,  # TODO: deprecate?
-	},
-	'adni-csts2-valid0': {
-		'dataset_name': 'adni',
-		'source_name': 'centroidsubj2',
-		'target_name': 'subjs',
-		'exclude_PPMI': True,
-		'n_test': 100,
-		'unnormalized': True,
-		'masked': True,
-		'n_shot': 1,
-		'use_atlas_as_source': False,
-		'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
-		'img_shape': (160, 192, 224, 1),
-		'pred_img_shape': (160, 192, 1),
-		'aug_img_shape': (160, 192, 224, 1),
-		'n_unlabeled': 1,
-		'n_validation': 100,
-		'valid_split': 0, 
-		'load_vols': True,
-		'aug_in_gen': True,
-		'n_vte_aug': None,
-		'n_flow_aug': None,
-		'use_labels': voxelmorph_labels,
-		'warp_labels': True,
-		'n_dims': 3,  # TODO: deprecate?
-	},
-	'adni-csts2-validtest': {
-		'dataset_name': 'adni',
-		'source_name': 'centroidsubj2',
-		'target_name': 'subjs',
-		'final_test': False,
-		'n_validation': 100,
-		'valid_split': 0,
-		'exclude_from_valid_list': 'adni-100-csts2-valid.txt',
-		'unnormalized': True,
-		'masked': True,
-		'n_shot': 100,
-		'use_atlas_as_source': False,
-		'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
-		'img_shape': (160, 192, 224, 1),
-		'pred_img_shape': (160, 192, 1),
-		'aug_img_shape': (160, 192, 224, 1),
-		'n_unlabeled': 1,
-		'load_vols': True,
-		'aug_in_gen': True,
-		'n_vte_aug': None,
-		'n_flow_aug': None,
-		'use_labels': voxelmorph_labels,
-		'warp_labels': True,
-		'n_dims': 3,  # TODO: deprecate?
-	},
-	
-	'atlas-to-buckner-test': {
-		'dataset_name': 'adni',
-		'source_name': 'atl',
-		'target_name': 'subjs',
-		'dataset_root_train': 'vm',
-		'dataset_root_valid': 'buckner',
-		'final_test': False,
-		'n_test': 0,
-		'unnormalized': True,
-		'masked': True,
-		'n_shot': 0,
-		'use_atlas_as_source': True,
-		#'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
-		'img_shape': (160, 192, 224, 1),
-		'pred_img_shape': (160, 192, 1),
-		'aug_img_shape': (160, 192, 224, 1),
-		'n_unlabeled': 1,
-		'n_validation': 40,
-		'load_vols': True,
-		'aug_in_gen': True,
-		'n_vte_aug': None,
-		'n_flow_aug': None,
-		'use_labels': voxelmorph_labels,
-		'warp_labels': True,
-		'n_dims': 3,  # TODO: deprecate?
-	},
-	'adni-csts2-test': {
-		'dataset_name': 'adni',
-		'source_name': 'centroidsubj2',
-		'target_name': 'subjs',
-		'final_test': True,
-		'n_test': 100,
-		'unnormalized': True,
-		'masked': True,
-		'n_shot': 1,
-		'use_atlas_as_source': False,
-		'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
-		'img_shape': (160, 192, 224, 1),
-		'pred_img_shape': (160, 192, 1),
-		'aug_img_shape': (160, 192, 224, 1),
-		'n_unlabeled': 1,
-		'n_validation': 1,
-		'load_vols': True,
-		'aug_in_gen': True,
-		'n_vte_aug': None,
-		'n_flow_aug': None,
-		'use_labels': voxelmorph_labels,
-		'warp_labels': True,
-		'n_dims': 3,  # TODO: deprecate?
-	},
 	'adni-100-csts2': {
 		'dataset_name': 'adni',
 		'source_name': 'centroidsubj2',
 		'target_name': 'subjs',
-		'unnormalized': True,
-		'masked': True,
-		'n_shot': 1,
+		'use_labels': voxelmorph_labels,
 		'use_atlas_as_source': False,
-		'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
+		'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
 		'img_shape': (160, 192, 224, 1),
 		'pred_img_shape': (160, 192, 1),
 		'aug_img_shape': (160, 192, 224, 1),
@@ -200,8 +49,6 @@ named_vte_data_params = {
 		'aug_in_gen': True,
 		'n_vte_aug': None,
 		'n_flow_aug': None,
-		'use_labels': voxelmorph_labels,
-		'final_test': False,
 		'warp_labels': True,
 		'n_dims': 3,  # TODO: deprecate?
 	},
@@ -209,12 +56,12 @@ named_vte_data_params = {
 		'dataset_name': 'adni',
 		'source_name': 'bucknercentroid',
 		'target_name': 'subjs',
-		'unnormalized': True,
-		'masked': True,
-		'n_shot': 1,
+		'use_labels': voxelmorph_labels,
 		'exclude_from_valid_list': 'adni-100-bts-valid.txt',
 		'use_atlas_as_source': False,
-		'use_subject': '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990104_vc700.npz',
+		'use_subjects_as_source': [
+			'/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990104_vc700.npz',
+			],
 		'img_shape': (160, 192, 224, 1),
 		'pred_img_shape': (160, 192, 1),
 		'aug_img_shape': (160, 192, 224, 1),
@@ -224,8 +71,6 @@ named_vte_data_params = {
 		'aug_in_gen': True,
 		'n_vte_aug': None,
 		'n_flow_aug': None,
-		'use_labels': voxelmorph_labels,
-		'final_test': False,
 		'warp_labels': True,
 		'n_dims': 3,  # TODO: deprecate?
 	},
@@ -241,7 +86,9 @@ named_vte_data_params = {
 		'masked': True,
 		'n_shot': 0,
 		'use_atlas_as_source': False,
-		'use_subject': '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990104_vc700.npz',
+		'use_subjects_as_source': [
+			'/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990104_vc700.npz',
+			],
 		'img_shape': (160, 192, 224, 1),
 		'pred_img_shape': (160, 192, 1),
 		'aug_img_shape': (160, 192, 224, 1),
@@ -263,27 +110,23 @@ if __name__ == '__main__':
 
 	ap = argparse.ArgumentParser()
 	# common params
-	ap.add_argument('exp_type', nargs='*', type=str, help='vte, class')
-	ap.add_argument('-gpu', nargs='*', type=int, help='unmapped gpu to use (i.e. use 3 for gpu 0 on ephesia)',
-					default=1)
+	ap.add_argument('exp_type', nargs='*', type=str, help='trans (transform model), fss (few-shot segmentation)')
+	ap.add_argument('-gpu', nargs='*', type=int, help='gpu id(s) to use', default=1)
 	ap.add_argument('-batch_size', nargs='?', type=int, default=16)
-	ap.add_argument('-data', nargs='?', type=str, help='mtg or fish', default=None)
-	ap.add_argument('-sample_from', nargs='?', type=str, help='dataset key to sample transforms from. loads a new dataset', default=None)
-	ap.add_argument('-model', type=str, help='Model architecture', default=None)
+	ap.add_argument('-data', nargs='?', type=str, help='name of dataset', default=None)
+
+	ap.add_argument('-model', type=str, help='model architecture', default=None)
 	ap.add_argument('-epoch', nargs='?', help='epoch number or "latest"', default=None)
+
 	ap.add_argument('-print_every', nargs='?', type=int,
 					help='Number of seconds between printing training batches as images', default=120)
-	ap.add_argument('-lr', nargs='?', type=float, help='Learning rate', default=5e-4)
 
-	ap.add_argument('-fit', action='store_true', help='Use keras fit_generator for training. '
-													  'Does not work if generator needs to run another keras model',
-					default=False)
+	ap.add_argument('-lr', nargs='?', type=float, help='Learning rate', default=5e-4)
 	ap.add_argument('-debug', action='store_true', help='Load fewer and save more often', default=False)
 	ap.add_argument('-loadn', type=int, help='Load fewer and save more often', default=None)
-	ap.add_argument('-eval', action='store_true', help='Simply run eval function', default=False)
+
 	ap.add_argument('-early', action='store_true', help='Simply run eval function', default=False,
 					dest='early_stopping')
-	ap.add_argument('-profile', action='store_true', help='Load fewer and save more often', default=False, dest='do_profile')
 
 	ap.add_argument('-from_dir', nargs='?', default=None, help='Load experiment from dir instead of by params')
 
@@ -318,7 +161,6 @@ if __name__ == '__main__':
 	ap.add_argument('-vte_epoch', nargs='?', help='epoch number or latest', type=int, default=None)
 	ap.add_argument('-aug_hand', action='store_true', help='apply hand aug', default=False)
 	ap.add_argument('-aug_flow', action='store_true', help='apply random flow field aug', default=False)
-	ap.add_argument('-final', action='store_true', help='Evaluate on final test set', default=False)
 
 	# fss params
 	ap.add_argument('-coupled', action='store_true', help='Coupled sampling of targets for fss', default=False)
@@ -362,18 +204,6 @@ if __name__ == '__main__':
 						'experiments/voxelmorph/vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5',
 					],
 				},
-				'flow-bdm': {
-					'model_arch': 'flow_bidir',
-					'save_every': 50,
-					'test_every': 50,
-					'transform_reg_flow': 'grad_l2', 'transform_reg_lambda_flow': 1,  # 0.5,
-					'recon_loss_Iw': 'cc_vm',  # 'cc',
-					'cc_loss_weight': 1, 'cc_win_size_Iw': 9,
-					'end_epoch': 50000,
-					'init_weights_from': [
-						'experiments/voxelmorph/vm2_cc_AtoUMS_100k_CStoUMS_xy_iter100000.h5',
-					],
-				},
 				'color-unet': {
 					'model_arch': 'color_unet',
 					'save_every': 10,
@@ -382,10 +212,10 @@ if __name__ == '__main__':
 						'VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_'
 						'flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1/'
 						'models/vm2_cc_bck_epoch500_iter50000.h5'),
-					'transform_reg_color': 'grad-si-l2', 'transform_reg_lambda_color': 1,  # 0.5,
+					'transform_reg_color': 'grad-si-l2', 'transform_reg_lambda_color': 0.02,  # 0.5,
 					'color_transform_in_tgt_space': False,
 					'recon_loss_I': 'l2-src',
-					'sigma_I': 0.1,
+					'recon_loss_wt': 1,
 					'end_epoch': 20,
 					'input_aux_labels': 'contours',
 				},
@@ -426,94 +256,6 @@ if __name__ == '__main__':
 
 
 			exp = TransformModel.TransformModelTrainer(data_params, arch_params, exp_root=args.exp_dir)
-
-			end_epoch = arch_params['end_epoch']
-			vte_end_epoch = end_epoch
-		elif exp_type.lower() == 'glt':
-			'''''''''''''''''''''''''''
-			Global and local transform learner
-			'''''''''''''''''''''''''''
-			import GLTExperimentClass
-			test_every_n_epochs = 10
-			save_every_n_epochs = 10
-
-			named_arch_params = {
-				'vmbdfc': {
-					'model_arch': 'voxelmorphbidir_flow_color',
-					'flow_arch': 'voxelmorphbidir',
-					'color_arch': 'voxelmorph2guha',
-					'save_every' : 5,
-					'test_every': 5,
-					'local_transform_enc_params': {
-						#'nf_enc': [40] * 1 + [40] * 5,
-						'nf_enc': [16] * 1 + [32] * 5,
-						'nf_dec': [64] * 2 + [32] * 3 + [16] * 2,
-						'n_convs_per_stage': 1,
-						'use_residuals': False, 'use_maxpool': False, 'fully_conv': False,
-					},
-					'local_only': True,
-					'global_only': False,
-					'transform_dec_params':
-						{
-							'nf_dec': [64] * 2 + [32] * 5,
-							'n_convs_per_stage': 1,
-							'use_residuals': False, 'fully_conv': False, 'use_upsample': True,
-						},
-					'learn_logvar': False,
-					'transform_reg_flow': 'grad_l2', 'transform_reg_lambda_flow': 1,  # 0.5,
-					# 'transform_reg_color': 'grad-si-l2-predgrad',
-					'transform_reg_color': 'grad-30seg-l2',
-					'transform_reg_lambda_color': 1,
-					'warp_labels': True,
-					'input_segmentations_to_color': False,
-					'input_oh': False,
-					'input_contours': False,
-					'color_transform_in_tgt_space': False,
-					'color_transform_type': 'B_RGB',
-					'recon_loss_Iw': 'cc_vm',  # 'cc',
-					'cc_loss_weight': 1, 'cc_win_size_Iw': 9,
-					'recon_loss_I': 'l2',
-					'freeze_flow': True,
-					'end_epoch': 1620,
-					'sigma_I': 0.1,
-					'pretrain_flow': 1600,
-				},
-			}
-
-			if args.model:
-				arch_params = named_arch_params[args.model]
-			elif args.from_dir:
-				with open(os.path.join(args.from_dir, 'arch_params.json'), 'r') as f:
-					arch_params = json.load(f)
-				with open(os.path.join(args.from_dir, 'data_params.json'), 'r') as f:
-					data_params = json.load(f)
-			else:
-				arch_params = named_arch_params['default']
-
-			# load flow and color architecture params independently
-			if args.flow_from_dir:
-				with open(os.path.join(args.flow_from_dir, 'arch_params.json'), 'r') as f:
-					arch_params['flow_arch_params'] = json.load(f)
-			if args.color_from_dir:
-				with open(os.path.join(args.color_from_dir, 'arch_params.json'), 'r') as f:
-					arch_params['color_arch_params'] = json.load(f)
-
-			# override default dataset
-			if args.data:
-				data_params = named_vte_data_params[args.data]
-
-			arch_params['lr'] = args.lr
-
-
-			data_params['split_id'] = args.split
-
-			if 'save_every' in arch_params.keys():
-				save_every_n_epochs = arch_params['save_every']
-			if 'test_every' in arch_params.keys():
-				test_every_n_epochs = arch_params['test_every']
-
-
-			exp = GLTExperimentClass.ExperimentGlobalLocalTransforms(data_params, arch_params)
 
 			end_epoch = arch_params['end_epoch']
 			vte_end_epoch = end_epoch

@@ -206,7 +206,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 		self.dataset.logger = self.logger
 		self.dataset.profiler_logger = self.profiler_logger
 		
-		# just load the entire dataset
+
 		(self.X_unlabeled, _, _, self.ids_unlabeled),\
 		(self.X_labeled_train, self.segs_labeled_train, self.contours_labeled_train, self.ids_labeled_train), \
 		(self.X_labeled_valid, self.segs_labeled_valid, _, self.ids_labeled_valid), \

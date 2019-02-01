@@ -37,12 +37,6 @@ buckner_vol_root = '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/F
 class MRIDataset(object):
 	def __init__(self, params, logger=None, profiler_logger=None):
 		# default parameter settings that might not be in keys
-		if 'unnormalized' not in params.keys():
-			params['unnormalized'] = False
-
-		if 'masked' not in params.keys():
-			params['masked'] = False
-
 		if 'load_vols' not in params.keys():
 			params['load_vols'] = False
 
@@ -61,34 +55,27 @@ class MRIDataset(object):
 
 
 	def create_display_name(self, display_name_base=''):
-		self.display_name = 'mri-tr-{}-valid-{}'.format(self.params['dataset_root_train'], self.params['dataset_root_valid'])
+		self.display_name = 'mri-tr-{}-valid-{}'.format(
+			self.params['dataset_root_train'], self.params['dataset_root_valid'])
 
-		if self.params['unnormalized'] and self.params['masked']:
-			self.display_name += '-unm'
-		elif self.params['unnormalized'] and not self.params['masked']:
-			self.display_name = '-un'
-
-		if self.params['n_unlabeled'] == -1:
-			self.display_name += '_all-ul'
-		else:
-			self.display_name += '_{}ul'.format(self.params['n_unlabeled'])
+		self.display_name += '_{}ul'.format(self.params['n_unlabeled'])
 
 		if self.params['use_atlas_as_source']:
 			self.display_name += '_atlas-l'
-		elif 'use_subject' in self.params.keys() and self.params['use_subject']:
-			if buckner_vol_root in self.params['use_subject']:
-				self.display_name += '_subj-{}-l'.format(os.path.splitext(os.path.basename(self.params['use_subject']))[0])
-			else:
-				self.display_name += '_subj-{}-l'.format('_'.join(self.params['use_subject'].split('_')[:3]))
-		elif self.params['n_shot'] == -1:
-			self.display_name += '_all-l'
-		else:
-			self.display_name += '_{}l'.format(self.params['n_shot'])
+		elif 'use_subjects_as_source' in self.params.keys() and self.params['use_subjects_as_source'] is not None:
+			if not isinstance(self.params['use_subjects_as_source'], list):
+				self.params['use_subjects_as_source'] = [self.params['use_subjects_as_source']]
+
+			self.display_name += '_subj-l'
+			for source_subject in self.params['use_subjects_as_source']:
+				if buckner_vol_root in self.params['use_subjects_as_source']:
+					self.display_name += '-{}'.format(os.path.splitext(os.path.basename(source_subject))[0])
+				else:
+					self.display_name += '-{}'.format('_'.join(source_subject.split('_')[:3]))
 
 		if 'split_id' in self.params.keys() and self.params['split_id'] is not None:
 			self.display_name += '_split{}'.format(self.params['split_id'])
-		if 'valid_split' in self.params.keys() and self.params['valid_split'] is not None:
-			self.display_name += '_validsplit{}'.format(self.params['valid_split'])
+
 		return self.display_name
 
 
@@ -102,16 +89,14 @@ class MRIDataset(object):
 
 		# get a list of volume files that we will load from later
 		self.train_files = _get_vol_files_list('train', dataset_root=self.params['dataset_root_train'], 
-			get_unnormalized=self.params['unnormalized'], exclude_PPMI=True,
+			get_unnormalized=True, exclude_PPMI=True,
 			check_for_matching_segs=self.params['dataset_root_train']=='buckner',
 		)
 
 		# buckner has some missing segs, so we need to filter the volumes
 		self.valid_files = _get_vol_files_list('validate', dataset_root=self.params['dataset_root_valid'],
-			get_unnormalized=self.params['unnormalized'], exclude_PPMI=True, 
+			get_unnormalized=True, exclude_PPMI=True,
 			check_for_matching_segs=self.params['dataset_root_valid']=='buckner')
-
-
 
 		np.random.seed(17)
 		np.random.shuffle(self.train_files)
@@ -130,25 +115,24 @@ class MRIDataset(object):
 			# only use the number that was requested
 			self.n_train = self.params['n_unlabeled']
 
-		if 'use_subject' in self.params.keys():
+		# only store as many files as we need
+		self.train_files = self.train_files[:self.n_train]
+
+		if 'use_subjects_as_source' in self.params.keys():
 			# make sure we include the source subject file in the training list
-			subject_file_idx = [i for i, f in enumerate(self.train_files) if self.params['use_subject'] in f]
+			subject_files = []
+			for source_subject in self.params['use_subject_as_source']:
+				subject_file_idx = [i for i, f in enumerate(self.train_files) if source_subject in f]
 
-			if len(subject_file_idx) == 0:
-				# we couldnt find it in the train files, assume we got a full filename
-				subject_file = self.params['use_subject']
-			else:
-				subject_file_idx = subject_file_idx[0]
-				subject_file = self.train_files[subject_file_idx]
+				if len(subject_file_idx) == 0:
+					# we couldnt find it in the train files, assume we got a full filename
+					subject_file = source_subject
+				else:
+					subject_file_idx = subject_file_idx[0]
+					subject_file = self.train_files[subject_file_idx]
 
-			# only store as many files as we need
-			self.train_files = self.train_files[:self.n_train]
-
-			if subject_file not in self.train_files:
-				self.train_files.append(subject_file)
-		else:
-			# only store as many files as we need
-			self.train_files = self.train_files[:self.n_train]
+				if subject_file not in self.train_files:
+					self.train_files.append(subject_file)
 
 		remove_valid_idxs = [i for i in range(len(self.valid_files)) if self.valid_files[i] in self.train_files]
 		self._print('Removing {} from validation set (also in training)'.format(
@@ -182,16 +166,19 @@ class MRIDataset(object):
 			self.ids_labeled_train = ['atlas']
 			labeled_idxs_train = []
 
-		elif 'use_subject' in self.params.keys():
+		elif 'use_subject_as_source' in self.params.keys():
 			# pick out the subject we selected
-			labeled_idxs_train = [i for i, f in enumerate(self.train_files) if self.params['use_subject'] in f]
+			labeled_idxs_train = []
+			for source_subject in self.params['use_subject_as_source']:
+				labeled_idxs_train += [i for i, f in enumerate(self.train_files) if source_subject in f]
+
 			self.files_labeled_train = [self.train_files[i] for i in labeled_idxs_train]
 			self.vols_labeled_train, self.segs_labeled_train, self.contours_labeled_train, self.ids_labeled_train \
 				= load_dataset_vols(
 				vol_files=[self.train_files[i] for i in labeled_idxs_train],
 				load_segs=load_source_segs,
 				load_contours=load_source_contours,
-				mask_vols=self.params['masked'],
+				mask_vols=True,
 				use_labels=self.label_mapping,
 			)
 		else:
@@ -207,13 +194,18 @@ class MRIDataset(object):
 				= load_dataset_vols(
 				vol_files=[self.train_files[i] for i in labeled_idxs_train],
 				load_segs=load_source_segs,
-				mask_vols=self.params['masked'],
+				mask_vols=True,
 				load_n=load_n,
 				use_labels=self.label_mapping,
 			)
 		return labeled_idxs_train
 	
 	def _print(self, msg):
+		'''
+		Prints the message to either the file logger (if initialized) or stdout
+		:param msg: a string
+		:return:
+		'''
 		if self.logger is not None:
 			self.logger.debug(msg)
 		else:
@@ -277,7 +269,7 @@ class MRIDataset(object):
 				load_n=load_n,
 				load_segs=load_segs,
 				load_contours=False,
-				mask_vols=self.params['masked'],
+				mask_vols=True,
 				use_labels=self.label_mapping,
 			)
 
@@ -286,7 +278,7 @@ class MRIDataset(object):
 				vol_files=self.files_unlabeled_train,
 				load_n=load_n,
 				load_segs=load_segs,
-				mask_vols=self.params['masked'],
+				mask_vols=True,
 				use_labels=self.label_mapping
 			)
 
@@ -344,7 +336,7 @@ class MRIDataset(object):
 				load_n=self.params['n_test'],
 				load_segs=True,
 				load_contours=False,
-				mask_vols=self.params['masked'],
+				mask_vols=True,
 				use_labels=self.label_mapping,
 			)
 
@@ -377,8 +369,8 @@ class MRIDataset(object):
 			       (vol_atlas, segs_atlas, contours_atlas, ids_atlas), \
 			       (vols_valid_labeled, segs_valid_labeled, contours_valid_labeled, ids_valid_labeled), \
 				   self.label_mapping
-		elif 'use_subject' in self.params.keys():
-			self.params['n_shot'] = 1
+		elif 'use_subjects_as_source' in self.params.keys() and self.params['use_subjects_as_source'] is not None:
+			self.params['n_shot'] = len(self.params['use_subjects_as_source'])
 
 			(vols_train_unlabeled, segs_train_unlabeled, contours_train_unlabeled, ids_train_unlabeled), \
 			(vols_train_labeled, segs_train_labeled, contours_train_labeled, ids_train_labeled), \
@@ -416,7 +408,7 @@ class MRIDataset(object):
 		while True:
 			start = time.time()
 			X, Y = _load_vol_and_seg(
-				files_list[file_idx], do_mask_vol=self.params['masked'],
+				files_list[file_idx], do_mask_vol=True,
 			)
 			# TODO: add scaling here since we no longer do it per example
 
@@ -456,11 +448,6 @@ class MRIDataset(object):
 
 			yield X, Y
 
-	def _print(self, msg):
-		if self.logger is not None:
-			self.logger.debug(msg)
-		else:
-			print(msg)
 
 	def gen_vols_batch(self, dataset_splits=['labeled_train'],
 	                   batch_size=1, randomize=True,
@@ -537,7 +524,8 @@ class MRIDataset(object):
 				for i, idx in enumerate(idxs.tolist()):
 					x, y, _ = _load_vol_and_seg(files_list[idx],
 					                         load_seg=load_segs,
-					                         do_mask_vol=self.params['masked'],
+					                         do_mask_vol=True,
+					                         do_mask_vol=True,
 					                         keep_labels=self.label_mapping,
 					                         )
 					batch_files.append(files_list[idx])
@@ -600,8 +588,6 @@ def _test_mrids_load_dataset():
 		'n_shot': 0,
 		'n_validation': 2,
 		'n_unlabeled': 5,
-		'unnormalized': True,
-		'masked': False,
 		'load_vols': True,
 		'use_atlas_as_source': False,
 		'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
@@ -661,7 +647,7 @@ def _get_vol_files_list(mode='train', dataset_root='vm', get_unnormalized=False,
 	vol_files = glob.glob(vols_dir)
 	if check_for_matching_segs:
 		seg_files = glob.glob(segs_dir)	
-		# exclude bad files
+		# exclude bad scans
 		vol_files = [f for f in vol_files if np.any([os.path.splitext(os.path.basename(f))[0] in sf for sf in seg_files]) 
 			and '990128_vc764' not in f]
 
