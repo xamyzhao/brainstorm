@@ -11,8 +11,7 @@ from keras.optimizers import Adam
 
 import mri_loader
 
-import voxelmorph_networks as my_voxelmorph_networks
-import brainstorm_networks
+import networks
 
 sys.path.append('../evolving_wilds')
 from cnn_utils import classification_utils, file_utils, vis_utils
@@ -116,11 +115,6 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			elif 'grad_l2' in self.transform_reg_name:
 				self.transform_reg_fn = my_metrics.gradient_loss_l2(n_dims=self.n_dims)
 				self.transform_reg_wt = self.arch_params['transform_reg_lambda_flow']
-			elif 'prec' in self.transform_reg_name:
-				from metrics import VoxelmorphMetrics
-				self.transform_reg_fn = VoxelmorphMetrics(alpha=1.).smoothness_precision_loss_zeromean
-				# let's just use lambda_flow to represent alpha
-				self.transform_reg_wt = self.arch_params['transform_reg_lambda_flow']
 			else:
 				self.transform_reg_fn = None
 				self.transform_reg_wt = 0.
@@ -132,14 +126,12 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			elif 'cc_vm' in self.recon_loss_name:
 				self.cc_loss_weight = self.arch_params['cc_loss_weight']
 				self.cc_win_size_Iw = self.arch_params['cc_win_size_Iw']
-#				self.reconstruction_loss_fn_flow = my_metrics.cc2D_loss(self.cc_win_size_Iw, n_chans=self.n_chans)#, n_dims=self.n_dims)
 				self.recon_loss_fn = vm_losses.NCC().loss
 				self.recon_loss_wt = self.cc_loss_weight
 				self.sigma_Iw = None
 			elif 'cc' in self.recon_loss_name:
 				self.cc_loss_weight = self.arch_params['cc_loss_weight']
 				self.cc_win_size_Iw = self.arch_params['cc_win_size_Iw']
-#				self.reconstruction_loss_fn_flow = my_metrics.cc2D_loss(self.cc_win_size_Iw, n_chans=self.n_chans)#, n_dims=self.n_dims)
 				self.recon_loss_fn = my_metrics.ccnD(
 					self.cc_win_size_Iw, n_chans=self.n_chans, n_dims=self.n_dims)
 				self.recon_loss_wt = self.cc_loss_weight
@@ -152,11 +144,6 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 			if 'grad_l2' in self.transform_reg_name:
 				self.transform_reg_fn = my_metrics.gradient_loss_l2(n_dims=self.n_dims).compute_loss
-				self.transform_reg_wt = self.arch_params['transform_reg_lambda_color']
-			elif 'prec' in self.transform_reg_name:
-				from metrics import VoxelmorphMetrics
-				self.transform_reg_fn = VoxelmorphMetrics(alpha=1.).smoothness_precision_loss_zeromean
-				# let's just use lambda_color to represent alpha
 				self.transform_reg_wt = self.arch_params['transform_reg_lambda_color']
 			elif 'seg-l2' in self.transform_reg_name:
 				self.transform_reg_wt = self.arch_params['transform_reg_lambda_color']
@@ -232,13 +219,12 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 						).compute_loss,
 						my_metrics.l1_norm,
 					], loss_weights=[1, 1]).compute_loss
-			elif 'seg-l2' in self.transform_reg_name and self.started_seq_training:  # otherwise the layer will not exist yet
+			elif 'seg-l2' in self.transform_reg_name:
 				self.transform_reg_fn = my_metrics.SpatialSegmentSmoothness(
 					n_dims=self.n_dims,
 					n_chans=self.n_chans,
-					warped_contours_layer_output=self.transform_model.get_layer('input_src_seg').output
+					warped_contours_layer_output=self.transform_model.get_layer('input_src_aux').output
 				).compute_loss
-
 			elif 'grad-si-l2' in self.transform_reg_name:  # do this here since we need to point to the model
 				self.transform_reg_fn = my_metrics.SpatialIntensitySmoothness(
 					n_dims=self.n_dims,
@@ -330,7 +316,6 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				compile=False
 			)
 
-
 			# back-warp all target vols to the source space
 			# we shouldn't have to deal with aux inputs since those should be in the input space already
 			for i in range(self.X_target_train.shape[0]):
@@ -387,16 +372,15 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 	def _create_flow_model(self):
 		# parse the flow architecture name to create the correct model
-		if 'voxelmorph2guha' in self.arch_params['model_arch']:
-			self.transform_model = my_voxelmorph_networks.voxelmorph_wrapper(
+		if 'voxelmorph' in self.arch_params['model_arch']:
+			self.transform_model = networks.voxelmorph_wrapper(
 				img_shape=self.img_shape,
-				voxelmorph_arch='vm2_guha'
+				voxelmorph_arch='vm'
 			)
 			self.models += [self.transform_model]
 
 		elif 'bidir_separate' in self.arch_params['model_arch']:
-			# TODO: separate forward/backward models, or true miccai bidir
-			# hack for subpar bidir performance -- load a fwd model and back model
+			# train a fwd model and back model
 			nf_enc = [16, 32, 32, 32]
 			nf_dec = [32, 32, 32, 32, 32, 16, 16]
 
@@ -419,8 +403,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			self.flow_fwd_model.name = 'vm_bidir_fwd_model'
 
 			# TODO: wrapper model! otherwise this will not train
-			import voxelmorph_networks
-			self.transform_model = voxelmorph_networks.bidir_wrapper(
+			self.transform_model = networks.bidir_wrapper(
 				img_shape=self.img_shape,
 				fwd_model=self.flow_fwd_model,
 				bck_model=self.flow_bck_model,
@@ -492,8 +475,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			#self.flow_fwd_model, self.flow_bck_model = self.models[:2]
 			if 'bidir_separate' in self.arch_params['model_arch']:
 				# recreate wrapper?
-				import voxelmorph_networks
-				self.transform_model = voxelmorph_networks.bidir_wrapper(
+				self.transform_model = networks.bidir_wrapper(
 					img_shape=self.img_shape,
 					fwd_model=self.models[0],
 					bck_model=self.models[1],
@@ -503,6 +485,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 	def _create_color_model(self):
 		if self.arch_params['input_aux_labels'] is None:
+			# no auxiliary input (e.g. contours, segmentations)
 			self.aux_input_shape = None
 		else:
 			if 'segs_oh' in self.arch_params['input_aux_labels']:
@@ -523,14 +506,9 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		# parse the color architecture name to create the correct model
 		if 'unet' in self.arch_params['model_arch']:
 			color_model_name = 'color_delta_unet'
-			if 'color_transform_in_tgt_space' in self.arch_params.keys() and self.arch_params[
-				'color_transform_in_tgt_space']:
-				color_model_name += '_tgtspace'
-			else:
-				color_model_name += '_srcspace'
 
 			# TODO: include a src-to-tgt space warp model in here if we want to compute recon in the tgt space
-			self.transform_model = brainstorm_networks.color_delta_unet_model(
+			self.transform_model = networks.color_delta_unet_model(
 				img_shape=self.img_shape,
 				n_output_chans=self.n_chans,
 				enc_params={
@@ -586,14 +564,14 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			return_ids=True
 		)
 
-		self.train_gen_verbose = self._generate_source_target_pairs(
+		self.train_gen = self._generate_source_target_pairs(
 			self.batch_size,
 			source_vol_gen=source_vol_gen,
 			target_vol_gen=target_train_vol_gen,
 			return_ids=True
 		)
 
-		self.valid_gen_verbose = self._generate_source_target_pairs(
+		self.valid_gen = self._generate_source_target_pairs(
 			self.batch_size,
 			source_vol_gen=source_vol_gen,
 			target_vol_gen=target_valid_vol_gen,
@@ -622,11 +600,13 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		while True:
 			if self.X_source_train.shape[0] == 1:
 				# single atlas, no need to sample from generator
-				X_source = self.X_source_train  # don't sample this
-			else:
-				X_source, Y_source, id_source = next(source_vol_gen)
+				X_source = self.X_source_train
 
-			X_target, Y_target, id_target = next(target_vol_gen)
+				id_source = [self.source_train_files[0]]
+			else:
+				X_source, _, id_source = next(source_vol_gen)
+
+			X_target, _, id_target = next(target_vol_gen)
 
 			if self.arch_params['input_aux_labels'] is not None:
 				inputs = [X_source, X_target, self.source_aux_inputs]
@@ -646,62 +626,10 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 
 	def make_train_results_im(self):
-		inputs, targets, ids_source,  ids_target = next(self.train_gen_verbose)
-		preds = self.transform_model.predict(inputs)
+		return self._make_results_im(self.train_gen)
 
-		# TODO: put logic of order of outputs in model class...
-		ims = inputs[:2]
-		labels = [
-			[os.path.basename(ids) for ids in ids_source], 
-			[os.path.basename(idt) for idt in ids_target]]
-		do_normalize = [False, False]
-		
-		if self.arch_params['input_aux_labels'] is not None \
-				and 'segs_oh' in self.arch_params['input_aux_labels']:
-			# last input will be aux info
-			ims += [inputs[-1][..., 16]]
-			labels += ['aux_oh']
-			do_normalize += [True]
-
-		if 'bidir' in self.arch_params['model_arch']:
-			# fwd flow, fwd transformed im
-			ims += [preds[i] for i in [2, 0]]
-		else:
-			ims += preds[:2]
-		labels += ['transform', 'transformed']
-		# if we are learning a color transform, normalize it
-		do_normalize += ['color' in self.arch_params['model_arch'], False]
-
-		return self._make_results_im(ims, labels, do_normalize)
-
-
-	def make_test_results_im(self, epoch_num=None):
-		inputs, targets, ids_source, ids_target = next(self.valid_gen_verbose)
-		preds = self.transform_model.predict(inputs)
-
-		# TODO: put logic of order of outputs in model class...
-		ims = inputs[:2]
-		labels = [
-			[os.path.basename(ids) for ids in ids_source], 
-			[os.path.basename(idt) for idt in ids_target]]
-		do_normalize = [False, False]
-
-		if self.arch_params['input_aux_labels'] is not None \
-				and 'segs_oh' in self.arch_params['input_aux_labels']:
-			ims += [inputs[-1][..., 16]]
-			labels += ['aux_oh']
-			do_normalize += [True]
-
-		if 'bidir' in self.arch_params['model_arch']:
-			# fwd flow, fwd transformed im
-			ims += [preds[i] for i in [2, 0]]
-		else:
-			ims += preds[:2]
-		labels += ['transform', 'transformed']
-		# if we are learning a color transform, normalize it
-		do_normalize += ['color' in self.arch_params['model_arch'], False]
-
-		return self._make_results_im(ims, labels, do_normalize)
+	def make_test_results_im(self):
+		return self._make_results_im(self.valid_gen)
 
 
 	def eval(self):
@@ -721,13 +649,9 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		self.epoch_count += 1
 		return 0
 
-	def train_joint(self):
-		X, Y, X_oh, Y_oh = next(self.train_gen_verbose)
-		'''
-		self.IJ_train_batch = X
-		self.I_train_oh = X_oh
-		self.J_train_oh = Y_oh
-		'''
+	def train_on_batch(self):
+		X, Y, X_oh, Y_oh = next(self.train_gen)
+
 		start = time.time()
 		loss_vals = self.transform_model.train_on_batch(
 			X, Y)
@@ -742,16 +666,12 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		return loss_vals, loss_names
 
 
-	def test_joint(self):
+	def test_batches(self):
 		n_test_batches = max(1, int(np.ceil(self.get_n_test() / self.batch_size)))
 		self.logger.debug('Testing {} batches'.format(n_test_batches))
 		for i in range(n_test_batches):
-			X, Y, X_oh, Y_oh = next(self.valid_gen_verbose)
-			'''
-			self.IJ_test_batch = X
-			self.I_test_oh = X_oh
-			self.J_test_oh = Y_oh
-			'''
+			X, Y, X_oh, Y_oh = next(self.valid_gen)
+
 			loss_names = ['test_' + ln for ln in self.loss_names]
 			test_loss = np.asarray(
 				self.transform_model.evaluate(
@@ -767,9 +687,34 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		return (total_test_loss / float(n_test_batches)).tolist(), loss_names
 
 
+	def _make_results_im(self, batch_gen, max_batch_size=32):
+		inputs, targets, ids_source, ids_target = next(self.train_gen)
+		preds = self.transform_model.predict(inputs)
 
-	def _make_results_im(self, input_im_batches, labels, do_normalize=None,
-	                     max_batch_size=32):
+		# TODO: put logic of order of outputs in model class...
+		input_im_batches = inputs[:2]
+		labels = [
+			[os.path.basename(ids) for ids in ids_source],
+			[os.path.basename(idt) for idt in ids_target]]
+		do_normalize = [False, False]
+
+		if self.arch_params['input_aux_labels'] is not None \
+				and 'segs_oh' in self.arch_params['input_aux_labels']:
+			# last input will be aux info. if it is segmentations, just visualize one label
+			input_im_batches += [inputs[-1][..., 16]]
+			labels += ['aux_oh']
+			do_normalize += [True]
+
+		if 'bidir' in self.arch_params['model_arch']:
+			# fwd flow, fwd transformed im
+			input_im_batches += [preds[i] for i in [2, 0]]
+		else:
+			input_im_batches += preds[:2]
+		labels += ['transform', 'transformed']
+
+		# if we are learning a color transform, normalize it for display purposes
+		do_normalize += ['color' in self.arch_params['model_arch'], False]
+
 		# batch_size = inputs_im.shape[0]
 		batch_size = self.batch_size
 		display_batch_size = min(max_batch_size, batch_size)
@@ -788,19 +733,19 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 					inverse_normalize=False, 
 					normalize=do_normalize[i]
 				) for i, batch in enumerate(input_im_batches)
-				#vis_utils.label_ims(recon_pred, 'pred_recon', inverse_normalize=True),
 			], axis=1)
 		else:
 			# pick a slice that is somewhat in the middle
-			slice_idx = np.random.choice(range(80, 120), 1, replace=False)
+			slice_idx = np.random.choice(
+				range(int(round(self.img_shape[-2] * 0.25)), int(round(self.img_shape[-2] * 0.75))),
+				1, replace=False)
+
 			out_im = np.concatenate([
 				vis_utils.label_ims(
 					batch[:, :, :, slice_idx[0]], labels[i], 
 					inverse_normalize=False,
 					normalize=do_normalize[i]
 				) for i, batch in enumerate(input_im_batches)
-				#vis_utils.label_ims(recon_pred, 'pred_recon', inverse_normalize=True),
 			], axis=1)
 
-	
 		return out_im

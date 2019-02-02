@@ -181,7 +181,7 @@ def train_batch_by_batch(
 		pb = generic_utils.Progbar(n_batch_per_epoch_train)
 		printed_count = 0
 		for bi in range(n_batch_per_epoch_train):
-			joint_loss, joint_loss_names = exp.train_joint()
+			joint_loss, joint_loss_names = exp.train_on_batch()
 			batch_count = e * n_batch_per_epoch_train + bi
 
 			# only log to file on the last batch of training, otherwise we'll have too many messages
@@ -247,7 +247,7 @@ def train_batch_by_batch(
 			file_stdout_logger.debug('{} testing'.format(exp.model_name))
 			pbt = generic_utils.Progbar(1)
 
-			test_loss, test_loss_names = exp.test_joint()
+			test_loss, test_loss_names = exp.test_batches()
 
 			log_losses(pbt, None, file_logger,
 			                         test_loss_names, test_loss,
