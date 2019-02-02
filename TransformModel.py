@@ -637,10 +637,10 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 
 	def get_n_train(self):
-		return min(100, len(self.dataset.files_unlabeled_train))
+		return min(100, self.X_target_train.shape[0])
 
 	def get_n_test(self):
-		return min(100, len(self.dataset.files_labeled_valid))
+		return min(100, self.X_target_test.shape[0])
 
 	def save_exp_info(self, exp_dir, figures_dir, logs_dir, models_dir):
 		return 0

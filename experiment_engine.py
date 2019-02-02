@@ -253,7 +253,7 @@ def train_batch_by_batch(
 			                         test_loss_names, test_loss,
 			                         e * n_batch_per_epoch_train + bi)
 
-			results_im = exp.make_test_results_im(e)
+			results_im = exp.make_test_results_im()
 			if results_im is not None:
 				cv2.imwrite(os.path.join(exp.figures_dir, 'test_epoch{}_batch{}.jpg'.format(e, bi)), results_im)
 

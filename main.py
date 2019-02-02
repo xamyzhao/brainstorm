@@ -74,6 +74,28 @@ named_data_params = {
 		'warp_labels': True,
 		'n_dims': 3,  # TODO: deprecate?
 	},
+	'adni-100-2atlas_1': {
+		'dataset_name': 'adni',
+		'source_name': 'centroid_buckner',
+		'target_name': 'subjs',
+		'use_labels': voxelmorph_labels,
+		'exclude_from_valid_list': 'adni-100-bts-valid.txt',
+		'use_atlas_as_source': False,
+		'use_subjects_as_source': [
+			'OASIS_OAS1_0327_MR1_mri_talairach_orig',
+			'/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990715_vc1131.npz',#990921_vc1289.npz'
+			],
+		'img_shape': (160, 192, 224, 1),
+		'pred_img_shape': (160, 192, 1),
+		'aug_img_shape': (160, 192, 224, 1),
+		'n_unlabeled': 100,
+		'n_validation': 50,
+		'load_vols': True,
+		'aug_in_gen': True,
+		'n_vte_aug': None,
+		'n_flow_aug': None,
+		'warp_labels': True,
+	},
 	'adni-100-2atlas': {
 		'dataset_name': 'adni',
 		'source_name': 'centroid_buckner',
@@ -218,8 +240,8 @@ if __name__ == '__main__':
 			named_arch_params = {
 				'flow-bds': {
 					'model_arch': 'flow_bidir_separate',
-					'save_every' : 50,
-					'test_every': 50,
+					'save_every' : 10,
+					'test_every': 25,
 					'transform_reg_flow': 'grad_l2', 'transform_reg_lambda_flow': 1,  # 0.5,
 					'recon_loss_Iw': 'cc_vm',  # 'cc',
 					'cc_loss_weight': 1, 'cc_win_size_Iw': 9,
