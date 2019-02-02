@@ -101,9 +101,6 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		# initialize our dataset
 		self.dataset = mri_loader.MRIDataset(self.data_params, self.logger)
 
-		if 'lr' in arch_params.keys():
-			self.lr = arch_params['lr']
-
 		if 'input_aux_labels' not in arch_params.keys():
 			self.arch_params['input_aux_labels'] = None
 
@@ -117,7 +114,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				self.transform_reg_fn = vm_losses.gradientLoss(penalty='l2')
 				self.transform_reg_wt = self.arch_params['transform_reg_lambda_flow']
 			elif 'grad_l2' in self.transform_reg_name:
-				self.transform_reg_fn = my_metrics.gradient_loss_l2(n_dims=self.n_dims).compute_loss
+				self.transform_reg_fn = my_metrics.gradient_loss_l2(n_dims=self.n_dims)
 				self.transform_reg_wt = self.arch_params['transform_reg_lambda_flow']
 			elif 'prec' in self.transform_reg_name:
 				from metrics import VoxelmorphMetrics
@@ -152,6 +149,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		if 'color' in self.arch_params['model_arch']:
 			self.recon_loss_name = self.arch_params['recon_loss_I']
 			self.transform_reg_name = self.arch_params['transform_reg_color']
+
 			if 'grad_l2' in self.transform_reg_name:
 				self.transform_reg_fn = my_metrics.gradient_loss_l2(n_dims=self.n_dims).compute_loss
 				self.transform_reg_wt = self.arch_params['transform_reg_lambda_color']
@@ -197,18 +195,10 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				self.recon_loss_fn = keras_metrics.mean_squared_error
 				self.recon_loss_wt = 0
 			elif 'l2' in self.recon_loss_name:
-				self.sigma_I = self.arch_params['sigma_I']
 				self.recon_loss_fn = keras_metrics.mean_squared_error
 
 				# set a constant weight for reconstruction
-				self.recon_loss_wt = 0.5 / self.sigma_I ** 2
-
-			#if self.arch_params['pretrain_flow'] > 0:
-			#	self.started_seq_training = False
-			#	self.color_lambda = 0
-		else:
-			# no color transform
-			self.arch_params['pretrain_flow'] = 0
+				self.recon_loss_wt = self.arch_params['recon_loss_wt']
 
 		if 'latest_epoch' in arch_params.keys():
 			self.latest_epoch = arch_params['latest_epoch']
@@ -290,13 +280,13 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		print([type(w) for w in loss_weights])
 		if run_options is not None:
 			self.transform_model.compile(loss=loss_fns, loss_weights=loss_weights,
-		                           optimizer=Adam(lr=self.lr), 
+		                           optimizer=Adam(lr=self.arch_params['lr']), 
 									options=run_options, run_metadata=run_metadata,
 			)
 
 		else:
 			self.transform_model.compile(loss=loss_fns, loss_weights=loss_weights,
-		                           optimizer=Adam(lr=self.lr))
+		                           optimizer=Adam(lr=self.arch_params['lr']))
 
 		self.arch_params['loss_weights'] = loss_weights
 		self.arch_params['loss_fns'] = [lf.__name__ for lf in loss_fns]
@@ -321,8 +311,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		(self.X_target_test, _, _, self.target_test_files), self.label_mapping \
 			= self.dataset.load_source_target(
 			load_n=load_n,
-			load_source_segs=self.arch_params['input_aux_labels'] is not None
-			                 and 'segs' in self.arch_params['input_aux_labels'])
+			load_source_segs=False)
 
 
 		if 'color' in self.arch_params['model_arch'] \
@@ -576,57 +565,40 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 
 
-	# TODO: streamline generators since we no longer need to get same-class pairs
 	def create_generators(self, batch_size):
 		self.batch_size = batch_size
 
+		source_vol_gen = self.dataset.gen_vols_batch(
+			dataset_splits=['labeled_train'],
+			batch_size=batch_size, load_segs=False, randomize=True,
+			return_ids=True,
+		)
+
 		target_train_vol_gen = self.dataset.gen_vols_batch(
 			dataset_splits=['unlabeled_train', 'labeled_train'],
-			batch_size=batch_size, load_segs=False, randomize=True)
+			batch_size=batch_size, load_segs=False, randomize=True,
+			return_ids=True
+		)
+
 		target_valid_vol_gen = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_valid'],
-			batch_size=batch_size, load_segs=False, randomize=True)
+			batch_size=batch_size, load_segs=False, randomize=True,
+			return_ids=True
+		)
 
-		# returns inputs, targets
-		self.train_gen = self._generate_source_target_pairs(
-			self.batch_size, target_vol_gen=target_train_vol_gen)
-		# for printing images
 		self.train_gen_verbose = self._generate_source_target_pairs(
 			self.batch_size,
-			target_vol_gen=self.dataset.gen_vols_batch(
-				dataset_splits=['unlabeled_train', 'labeled_train'],
-				batch_size=batch_size, load_segs=False, randomize=True,
-				return_ids=True),
+			source_vol_gen=source_vol_gen,
+			target_vol_gen=target_train_vol_gen,
 			return_ids=True
 		)
 
-		self.valid_gen = self._generate_source_target_pairs(
-			self.batch_size, target_vol_gen=target_valid_vol_gen)
-
-		# for printing images
 		self.valid_gen_verbose = self._generate_source_target_pairs(
 			self.batch_size,
-			target_vol_gen=self.dataset.gen_vols_batch(
-				dataset_splits=['labeled_valid'],
-				batch_size=batch_size, load_segs=False, randomize=True,
-				return_ids=True),
+			source_vol_gen=source_vol_gen,
+			target_vol_gen=target_valid_vol_gen,
 			return_ids=True
 		)
-
-		# make a new generator just for sampling, in case we are using fit_generator and it is already
-		# using the other test_gen
-		self.sample_tgt_valid_gen = self.dataset.gen_vols_batch(
-			dataset_splits=['labeled_valid'],
-			batch_size=batch_size, load_segs=False, randomize=True)
-
-		self.sample_tgt_train_gen = self.dataset.gen_vols_batch(
-			dataset_splits=['unlabeled_train', 'labeled_train'],
-			batch_size=batch_size, load_segs=False, randomize=True)
-
-		self.sample_tgt_train_valid_gen = self.dataset.gen_vols_batch(
-			dataset_splits=['unlabeled_train', 'labeled_train', 'labeled_valid'],
-			batch_size=batch_size, load_segs=False, randomize=True)
-
 
 
 	def _generate_source_target_pairs(self, batch_size, source_vol_gen=None, target_vol_gen=None, return_ids=False):
@@ -648,18 +620,13 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				self.source_aux_inputs = self.contours_source_train
 
 		while True:
-			if source_vol_gen is None and self.X_source_train.shape[0] == 1:
+			if self.X_source_train.shape[0] == 1:
+				# single atlas, no need to sample from generator
 				X_source = self.X_source_train  # don't sample this
-				id_source = os.path.splitext(os.path.basename(self.source_train_files[0]))[0]
 			else:
-				X_source, Y_source = next(source_vol_gen)
-				id_source = None
+				X_source, Y_source, id_source = next(source_vol_gen)
 
-			if return_ids:
-				X_target, Y_target, id_target = next(target_vol_gen)
-			else:
-				X_target, Y_target = next(target_vol_gen)
-				id_target = None
+			X_target, Y_target, id_target = next(target_vol_gen)
 
 			if self.arch_params['input_aux_labels'] is not None:
 				inputs = [X_source, X_target, self.source_aux_inputs]
@@ -679,12 +646,14 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 
 	def make_train_results_im(self):
-		inputs, targets, id_source,  ids_target = next(self.train_gen_verbose)
+		inputs, targets, ids_source,  ids_target = next(self.train_gen_verbose)
 		preds = self.transform_model.predict(inputs)
 
 		# TODO: put logic of order of outputs in model class...
 		ims = inputs[:2]
-		labels = [id_source, ids_target]
+		labels = [
+			[os.path.basename(ids) for ids in ids_source], 
+			[os.path.basename(idt) for idt in ids_target]]
 		do_normalize = [False, False]
 		
 		if self.arch_params['input_aux_labels'] is not None \
@@ -706,43 +675,15 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		return self._make_results_im(ims, labels, do_normalize)
 
 
-	def _sample_from_prior(self, I=None, labels_onehot=None, batch_size=None, sample_from_gen=None, sample_targets_from=['valid'], verbose=True):
-		if batch_size is None:
-			batch_size = self.batch_size
-		
-		# if our dataset has a single source image
-		if I is None:
-			I = self.X_source_train
-		else:
-			labels = None
-			aux_inputs = None
-
-		if sample_from_gen is None:
-			if 'valid' in sample_targets_from and 'train' in sample_targets_from:
-				if verbose:
-					self.logger.debug('Sampling tgt from train+valid set')
-				sample_from_gen = self.sample_tgt_train_valid_gen
-			elif 'valid' in sample_targets_from and 'train' not in sample_targets_from:
-				if verbose:
-					self.logger.debug('Sampling tgt from valid set')
-				sample_from_gen = self.sample_tgt_valid_gen
-			else:
-				if verbose:
-					self.logger.debug('Sampling tgt from train set')
-			sample_from_gen = self.sample_tgt_train_gen
-
-		tgt, _ = next(sample_from_gen)
-		return [tgt]
-
-
-
 	def make_test_results_im(self, epoch_num=None):
-		inputs, targets, id_source, ids_target = next(self.valid_gen_verbose)
+		inputs, targets, ids_source, ids_target = next(self.valid_gen_verbose)
 		preds = self.transform_model.predict(inputs)
 
 		# TODO: put logic of order of outputs in model class...
 		ims = inputs[:2]
-		labels = [id_source, ids_target]
+		labels = [
+			[os.path.basename(ids) for ids in ids_source], 
+			[os.path.basename(idt) for idt in ids_target]]
 		do_normalize = [False, False]
 
 		if self.arch_params['input_aux_labels'] is not None \
@@ -763,9 +704,6 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		return self._make_results_im(ims, labels, do_normalize)
 
 
-	def _make_eval_gen(self, batch_size=1):
-		return 0
-
 	def eval(self):
 		return 0
 
@@ -773,24 +711,15 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 	def get_n_train(self):
 		return min(100, len(self.dataset.files_unlabeled_train))
 
-
 	def get_n_test(self):
 		return min(100, len(self.dataset.files_labeled_valid))
-
-
-	def train_discriminator(self):
-		return [], []
-
 
 	def save_exp_info(self, exp_dir, figures_dir, logs_dir, models_dir):
 		return 0
 
-
-
 	def update_epoch_count(self, epoch):
 		self.epoch_count += 1
 		return 0
-
 
 	def train_joint(self):
 		X, Y, X_oh, Y_oh = next(self.train_gen_verbose)
@@ -862,7 +791,8 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				#vis_utils.label_ims(recon_pred, 'pred_recon', inverse_normalize=True),
 			], axis=1)
 		else:
-			slice_idx = np.random.choice(self.img_shape[-2], 1, replace=False)
+			# pick a slice that is somewhat in the middle
+			slice_idx = np.random.choice(range(80, 120), 1, replace=False)
 			out_im = np.concatenate([
 				vis_utils.label_ims(
 					batch[:, :, :, slice_idx[0]], labels[i], 

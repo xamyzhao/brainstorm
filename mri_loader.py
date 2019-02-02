@@ -68,7 +68,7 @@ class MRIDataset(object):
 
 			self.display_name += '_subj-l'
 			for source_subject in self.params['use_subjects_as_source']:
-				if buckner_vol_root in self.params['use_subjects_as_source']:
+				if buckner_vol_root in source_subject:
 					self.display_name += '-{}'.format(os.path.splitext(os.path.basename(source_subject))[0])
 				else:
 					self.display_name += '-{}'.format('_'.join(source_subject.split('_')[:3]))
@@ -115,13 +115,10 @@ class MRIDataset(object):
 			# only use the number that was requested
 			self.n_train = self.params['n_unlabeled']
 
-		# only store as many files as we need
-		self.train_files = self.train_files[:self.n_train]
-
+		load_additional_subject_files = []
 		if 'use_subjects_as_source' in self.params.keys():
 			# make sure we include the source subject file in the training list
-			subject_files = []
-			for source_subject in self.params['use_subject_as_source']:
+			for source_subject in self.params['use_subjects_as_source']:
 				subject_file_idx = [i for i, f in enumerate(self.train_files) if source_subject in f]
 
 				if len(subject_file_idx) == 0:
@@ -131,8 +128,16 @@ class MRIDataset(object):
 					subject_file_idx = subject_file_idx[0]
 					subject_file = self.train_files[subject_file_idx]
 
-				if subject_file not in self.train_files:
-					self.train_files.append(subject_file)
+				if subject_file in self.train_files:
+					# dont include this in the training set yet because we will prune the training set
+					self.train_files.remove(subject_file)
+
+				load_additional_subject_files.append(subject_file)
+				
+		# only store as many files as we need
+		self.train_files = self.train_files[:self.n_train] + load_additional_subject_files
+		self._print('Got {} training files and {} additional source (atlas) files!'.format(
+			len(self.train_files), len(load_additional_subject_files)))
 
 		remove_valid_idxs = [i for i in range(len(self.valid_files)) if self.valid_files[i] in self.train_files]
 		self._print('Removing {} from validation set (also in training)'.format(
@@ -166,10 +171,10 @@ class MRIDataset(object):
 			self.ids_labeled_train = ['atlas']
 			labeled_idxs_train = []
 
-		elif 'use_subject_as_source' in self.params.keys():
+		elif 'use_subjects_as_source' in self.params.keys():
 			# pick out the subject we selected
 			labeled_idxs_train = []
-			for source_subject in self.params['use_subject_as_source']:
+			for source_subject in self.params['use_subjects_as_source']:
 				labeled_idxs_train += [i for i, f in enumerate(self.train_files) if source_subject in f]
 
 			self.files_labeled_train = [self.train_files[i] for i in labeled_idxs_train]
@@ -490,7 +495,7 @@ class MRIDataset(object):
 		else:
 			# just concatenate the pre-loaded vols and sample from them
 			X_all = np.concatenate(X_all, axis=0)
-			if load_segs:
+			if load_segs and len(Y_all) > 0:
 				Y_all = np.concatenate(Y_all, axis=0)
 			else:
 				Y_all = None
@@ -524,7 +529,6 @@ class MRIDataset(object):
 				for i, idx in enumerate(idxs.tolist()):
 					x, y, _ = _load_vol_and_seg(files_list[idx],
 					                         load_seg=load_segs,
-					                         do_mask_vol=True,
 					                         do_mask_vol=True,
 					                         keep_labels=self.label_mapping,
 					                         )

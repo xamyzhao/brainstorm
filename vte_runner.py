@@ -32,7 +32,7 @@ voxelmorph_labels = [0,
 					 ]
 
 
-named_vte_data_params = {
+named_data_params = {
 	'adni-100-csts2': {
 		'dataset_name': 'adni',
 		'source_name': 'centroidsubj2',
@@ -73,6 +73,28 @@ named_vte_data_params = {
 		'n_flow_aug': None,
 		'warp_labels': True,
 		'n_dims': 3,  # TODO: deprecate?
+	},
+	'adni-100-2atlas': {
+		'dataset_name': 'adni',
+		'source_name': 'centroid_buckner',
+		'target_name': 'subjs',
+		'use_labels': voxelmorph_labels,
+		'exclude_from_valid_list': 'adni-100-bts-valid.txt',
+		'use_atlas_as_source': False,
+		'use_subjects_as_source': [
+			'OASIS_OAS1_0327_MR1_mri_talairach_orig',
+			'/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990525_vc1024.npz',#990921_vc1289.npz'
+			],
+		'img_shape': (160, 192, 224, 1),
+		'pred_img_shape': (160, 192, 1),
+		'aug_img_shape': (160, 192, 224, 1),
+		'n_unlabeled': 100,
+		'n_validation': 50,
+		'load_vols': True,
+		'aug_in_gen': True,
+		'n_vte_aug': None,
+		'n_flow_aug': None,
+		'warp_labels': True,
 	},
 	'buckner-test': {
 		'dataset_name': 'adni',
@@ -244,7 +266,7 @@ if __name__ == '__main__':
 
 			# override default dataset
 			if args.data:
-				data_params = named_vte_data_params[args.data]
+				data_params = named_data_params[args.data]
 
 			arch_params['lr'] = args.lr
 			data_params['split_id'] = args.split
@@ -314,7 +336,7 @@ if __name__ == '__main__':
 				arch_params = named_arch_params[args.model]
 
 			if args.data:
-				data_params = named_vte_data_params[args.data]
+				data_params = named_data_params[args.data]
 				#data_params['warp_labels'] = False
 
 			arch_params['lr'] = args.lr
@@ -394,7 +416,7 @@ if __name__ == '__main__':
 			data_params['split_id'] = args.split
 
 			if args.sample_from:
-				data_params['sample_transforms_from_data_params'] = named_vte_data_params[args.sample_from]
+				data_params['sample_transforms_from_data_params'] = named_data_params[args.sample_from]
 
 			if args.coupled:
 				arch_params['do_coupled_sampling'] = True

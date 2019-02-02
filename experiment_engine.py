@@ -11,7 +11,6 @@ import tensorflow as tf
 from keras.utils import generic_utils
 from tensorflow.python.client import timeline
 
-from cnn_utils import my_callbacks
 import json
 
 
@@ -114,14 +113,7 @@ def run_experiment(exp, run_args,
 		init_layers=run_args.init_weights)
 
 	# compile models for training
-	if run_args.do_profile:
-		run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-		run_metadata = tf.RunMetadata()
-	else:
-		run_options = None
-		run_metadata = None
-
-	exp.compile_models(run_options=run_options, run_metadata=run_metadata)
+	exp.compile_models()
 
 	if run_args.init_from:
 		exp.init_model_weights(run_args.init_from)
@@ -138,7 +130,7 @@ def run_experiment(exp, run_args,
 		tbw=tbw, file_stdout_logger=file_stdout_logger, file_logger=file_logger,
 		run_args=run_args,
 		early_stopping_eps=early_stopping_eps,
-		run_metadata=run_metadata,
+		run_metadata=None,
 	)
 
 	return exp_dir
@@ -198,8 +190,8 @@ def train_batch_by_batch(
 				training_logger = file_logger
 
 			log_losses(pb, tbw, training_logger,
-			                         disc_loss_names + joint_loss_names,
-			                         disc_loss + joint_loss,
+			                         joint_loss_names,
+			                         joint_loss,
 			                         batch_count)
 
 			# time how long it takes to do 5 batches
@@ -235,11 +227,6 @@ def train_batch_by_batch(
 			                                                   save_every_n_epochs,
 			                                                   test_every_n_epochs,
 			                                                   ))
-
-		if run_args.do_profile:
-			trace = timeline.Timeline(step_stats=run_metadata.step_stats)
-			with open(os.path.join(exp.exp_dir, 'tf_timeline.ctf.json'), 'w') as f:
-				f.write(trace.generate_chrome_trace_format())
 
 		if (e > 0 and e % auto_save_every_n_epochs == 0 and e > start_epoch) or e == end_epoch or (
 							e > 0 and e % save_every_n_epochs == 0 and e > start_epoch):
