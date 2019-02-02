@@ -9,7 +9,7 @@ import json
 import numpy as np
 
 import mri_loader
-import brainstorm_networks
+import networks
 
 sys.path.append('../evolving_wilds')
 from cnn_utils import aug_utils, batch_utils, classification_utils, file_utils, vis_utils
@@ -378,13 +378,13 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 		# segmentation warpers that take in a flow field
 		if 'warpoh' in self.arch_params.keys() and self.arch_params['warpoh']:
-			self.seg_warp_model = brainstorm_networks.warp_model(
+			self.seg_warp_model = networks.warp_model(
 				img_shape=self.aug_img_shape[:-1] + (self.n_labels,),  # (1,),
 				interp_mode='linear',
 				indexing=indexing,
 			)
 		else:
-			self.seg_warp_model = brainstorm_networks.warp_model(
+			self.seg_warp_model = networks.warp_model(
 				img_shape=self.aug_img_shape[:-1] + (1,),
 				interp_mode='nearest',
 				indexing=indexing
@@ -392,7 +392,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 		if self.aug_flow:
 			if self.data_params['aug_params']['randflow_type'] == 'ronneberger':
-				self.flow_rand_aug_model = brainstorm_networks.randflow_ronneberger_model(
+				self.flow_rand_aug_model = networks.randflow_ronneberger_model(
 					img_shape=self.aug_img_shape,
 					model=None,
 					interp_mode='linear',
@@ -402,7 +402,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 				)
 				self.logger.debug('Random flow Ronneberger augmentation model')
 			else:
-				self.flow_rand_aug_model = brainstorm_networks.randflow_model(
+				self.flow_rand_aug_model = networks.randflow_model(
 					img_shape=self.aug_img_shape,
 					model=None,
 					interp_mode='linear',
