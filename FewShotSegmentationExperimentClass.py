@@ -10,6 +10,7 @@ import numpy as np
 
 import mri_loader
 import networks
+import utils
 
 sys.path.append('../evolving_wilds')
 from cnn_utils import aug_utils, batch_utils, classification_utils, file_utils, vis_utils
@@ -18,7 +19,6 @@ from cnn_utils import ExperimentClassBase
 
 sys.path.append('../LPAT')
 from networks import transform_network_utils, segmenter_networks
-
 
 sys.path.append('../voxelmorph-sandbox/')
 import voxelmorph.losses as vm_losses
@@ -40,13 +40,11 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 		exp_name += '_{}'.format(self.dataset_name)
 
-		exp_name += '_ims{}'.format(self.pred_img_shape)
-		exp_name += '_arch{}'.format(self.arch_params['nf_enc'])
 		if 'warpoh' in self.arch_params.keys() and self.arch_params['warpoh']:
 			exp_name += '_warpoh'
 
 		# random flow augmentation params
-		if self.aug_flow:
+		if self.aug_rand:
 			if 'flow_sigma' in self.data_params['aug_params'] \
 					and self.data_params['aug_params']['flow_sigma'] is not None:
 				exp_name += '_augflow-sigma{}_blur{}'.format(
@@ -62,17 +60,17 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 			if 'mult_amp' in self.data_params['aug_params']:
 				exp_name += '_randmult{}'.format(self.data_params['aug_params']['mult_amp'])
 
-		if self.aug_flow:
-			exp_name += '_flowaug'
+		if self.aug_rand:
+			exp_name += '_rand-aug'
 			if self.data_params['n_flow_aug'] is not None and not self.data_params['aug_in_gen']:
 				exp_name += '{}'.format(self.data_params['n_flow_aug'])
 			else:
 				exp_name += '-gen'
 
-		if self.aug_vte:
-			exp_name += '_vteaug'
-			if self.data_params['n_vte_aug'] is not None and not self.data_params['aug_in_gen']:
-				exp_name += '{}'.format(self.data_params['n_vte_aug'])
+		if self.aug_tm:
+			exp_name += '_tm-aug'
+			if self.data_params['n_tm_aug'] is not None and not self.data_params['aug_in_gen']:
+				exp_name += '{}'.format(self.data_params['n_tm_aug'])
 			else:
 				exp_name += '-gen'
 
@@ -112,7 +110,6 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 		# i.e. are we segmenting slices or volumes
 		self.pred_img_shape = data_params['pred_img_shape']
 
-
 		# i.e. are we warping slices or volumes
 		self.aug_img_shape = data_params['aug_img_shape']
 
@@ -124,10 +121,6 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 		self.logger = None
 		self.profiler_logger = None
-
-		# TODO: best place to do this? we might need to refer to these later if we are using fit_gen
-		self.X_train_preaug = None
-		self.Y_train_preaug = None
 
 		if 'pretrain_l2' in self.arch_params.keys():
 			self.loss_fn = keras_metrics.mean_squared_error
@@ -144,37 +137,37 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 		self.n_aug = None  # do augmentation through the generator by default
 
 		if 'aug_flow' in data_params.keys() and data_params['aug_flow']:
-			self.aug_flow = True
+			self.aug_rand = True
 			if 'n_flow_aug' in data_params.keys() and data_params['n_flow_aug'] is not None:
 				self.n_aug = data_params['n_flow_aug']
 		else:
-			self.aug_flow = False
+			self.aug_rand = False
 
-		self.aug_vte = False
+		self.aug_tm = False
 		self.aug_sas = False
-		if data_params['aug_vte']:
-			self.aug_vte = True
+		if data_params['aug_tm']:
+			self.aug_tm = True
 			self.aug_sas = False
-			if 'n_vte_aug' in data_params.keys() and data_params['n_vte_aug'] is not None:
-				self.n_aug = data_params['n_vte_aug']
+			if 'n_tm_aug' in data_params.keys() and data_params['n_tm_aug'] is not None:
+				self.n_aug = data_params['n_tm_aug']
 		elif data_params['aug_sas']:
 			self.aug_sas = True
-			self.aug_vte = False
+			self.aug_tm = False
 			if 'n_sas_aug' in data_params.keys() and data_params['n_sas_aug'] is not None:
 				self.n_aug = data_params['n_sas_aug']
 
 		# come up with a name for our flow and color models so we can put them in this model name
-		if self.arch_params['vte_flow_model'] is not None and self.arch_params['vte_color_model'] is not None \
-				and self.aug_vte:
-			flow_epoch = re.search('(?<=_epoch)[0-9]*', self.arch_params['vte_flow_model']).group(0)
-			color_epoch = re.search('(?<=_epoch)[0-9]*', self.arch_params['vte_color_model']).group(0)
+		if self.arch_params['tm_flow_model'] is not None and self.arch_params['tm_color_model'] is not None \
+				and self.aug_tm:
+			flow_epoch = re.search('(?<=_epoch)[0-9]*', self.arch_params['tm_flow_model']).group(0)
+			color_epoch = re.search('(?<=_epoch)[0-9]*', self.arch_params['tm_color_model']).group(0)
 
 			# only include the color model in the name if we are doing both flow and color aug
-			self.aug_model_name = 'vteflow-e{}-colore{}'.format(
+			self.aug_model_name = 'tmflow-e{}-colore{}'.format(
 				flow_epoch, color_epoch)
-		elif self.arch_params['vte_flow_model'] is not None:
-			self.aug_model_name = 'vteflow-{}'.format(
-				os.path.basename(self.arch_params['vte_flow_model'].split('/models/')[0]))
+		elif self.arch_params['tm_flow_model'] is not None:
+			self.aug_model_name = 'tmflow-{}'.format(
+				os.path.basename(self.arch_params['tm_flow_model'].split('/models/')[0]))
 
 		if 'aug_in_gen' not in data_params.keys():
 			self.data_params['aug_in_gen'] = False
@@ -205,7 +198,6 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 	def load_data(self, load_n=None):
 		self.dataset.logger = self.logger
 		self.dataset.profiler_logger = self.profiler_logger
-		
 
 		(self.X_unlabeled, _, _, self.ids_unlabeled),\
 		(self.X_labeled_train, self.segs_labeled_train, self.contours_labeled_train, self.ids_labeled_train), \
@@ -247,11 +239,10 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 			json.dump(self.data_params, f)
 
 
-
 	def create_generators(self, batch_size):
 		self.batch_size = batch_size
 
-		# actually more like a target generator...
+		# actually more like a target generator
 		self.unlabeled_gen_raw = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_train', 'unlabeled_train'], batch_size=1, 
 			randomize=True,
@@ -265,14 +256,18 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 		self.aug_train_gen = None
 		if self.n_aug is not None:
 			self._create_augmented_examples()
-			self.logger.debug('Augmented classifier training set: vols {}, segs {}'.format(self.X_labeled_train.shape, self.segs_labeled_train.shape))
-		elif self.aug_vte or self.aug_flow:
+			self.logger.debug('Augmented classifier training set: vols {}, segs {}'.format(
+				self.X_labeled_train.shape, self.segs_labeled_train.shape))
+		elif self.aug_tm or self.aug_rand:
+			# augmentation by transform model or random flow+intensity requires synthesizing
+			# a lot of examples, so we'll just do this per-batch
 			aug_by = []
-			if self.aug_vte:
-				aug_by += ['vte']
-			if self.aug_flow:
+			if self.aug_tm:
+				aug_by += ['tms']
+			if self.aug_rand:
 				aug_by += ['flow']
-			# tehse need to be done in the generator
+
+			# these need to be done in the generator
 			self.aug_train_gen = self._generate_augmented_batch(
 					X_to_aug=self.X_labeled_train, Y_to_aug=self.segs_labeled_train,
 					contours_to_aug=self.contours_labeled_train,
@@ -299,25 +294,18 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 			return_ids=True,
 		)
 
-		# just pick some random slices for testing
+		# just pick some random slices for validation
 		rand_subjs = np.random.choice(self.X_labeled_valid.shape[0], batch_size)
 		rand_slices = np.random.choice(self.aug_img_shape[2], batch_size, replace=False)
 		
-		self.X_test_batch = np.zeros((batch_size,) + self.pred_img_shape)
-		self.Y_test_batch = np.zeros((batch_size,) + self.pred_segs_shape)
+		self.X_valid_batch = np.zeros((batch_size,) + self.pred_img_shape)
+		self.Y_valid_batch = np.zeros((batch_size,) + self.pred_segs_shape)
 		for ei in range(batch_size):
-			self.X_test_batch[ei] = self.X_labeled_valid[rand_subjs[ei], :, :, rand_slices[ei]]	
-			self.Y_test_batch[ei] = self.segs_labeled_valid[rand_subjs[ei], :, :, rand_slices[ei]]	
-		# if 'sample_transforms_from_data_params' in self.data_params.keys():
-		# 	with open(os.path.join(self.exp_dir, 'sample_transforms_from.txt'), 'w') as f:
-		# 		f.writelines([fn + '\n' for fn in self.transforms_dataset.files_labeled_train + self.transforms_dataset.files_unlabeled_train + self.transforms_dataset.files_labeled_valid])
-		#
-		# 	self.transforms_train_valid_gen = self.transforms_dataset.gen_vols_batch(
-		# 		dataset_splits=['labeled_train', 'unlabeled_train', 'labeled_valid'], batch_size=1, randomize=True,
-		# 		load_segs=False,
-		# 	)
-		self.Y_test_batch = classification_utils.labels_to_onehot(self.Y_test_batch, label_mapping=self.label_mapping)
-		#next(self.valid_gen)
+			self.X_valid_batch[ei] = self.X_labeled_valid[rand_subjs[ei], :, :, rand_slices[ei]]
+			self.Y_valid_batch[ei] = self.segs_labeled_valid[rand_subjs[ei], :, :, rand_slices[ei]]
+
+		self.Y_valid_batch = classification_utils.labels_to_onehot(self.Y_valid_batch, label_mapping=self.label_mapping)
+
 
 	def _generate_slices_batchs_from_vols(self, vols, segs, ids, vol_gen=None,
 										  randomize=False, batch_size=16,
@@ -351,20 +339,6 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 			yield X_slices, Y, ids_batch
 
-	#
-	# def _generate_inputs_targets(self, aug_gen, mode='train'):
-	# 	while True:
-	# 		data = next(aug_gen)
-	# 		X_aug = data[-2]
-	# 		Y_aug = data[-1]
-	#
-	# 		if mode == 'train':
-	# 			self.X_train_batch = X_aug
-	# 			self.Y_train_batch = Y_aug
-	# 		else:
-	# 			self.X_test_batch = X_aug
-	# 			self.Y_test_batch = Y_aug
-	# 		yield X_aug, Y_aug
 
 
 	def _create_augmentation_models(self, indexing='xy'):
@@ -390,7 +364,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 				indexing=indexing
 			)
 
-		if self.aug_flow:
+		if self.aug_rand:
 			if self.data_params['aug_params']['randflow_type'] == 'ronneberger':
 				self.flow_rand_aug_model = networks.randflow_ronneberger_model(
 					img_shape=self.aug_img_shape,
@@ -416,25 +390,25 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 			self.flow_rand_aug_model.summary(print_fn=self.logger.debug)
 
-		if self.aug_vte or self.aug_sas:
+		if self.aug_tm or self.aug_sas:
 			from keras.models import load_model
-			self.flow_aug_model = load_model(self.arch_params['vte_flow_model'],
-			                                 custom_objects={
-				                                 'SpatialTransformer': functools.partial(
-					                                 nrn_layers.SpatialTransformer,
-					                                 indexing=indexing)
-			                                 }, compile=False
-			                             )
+			self.flow_aug_model = load_model(
+				self.arch_params['tm_flow_model'],
+				custom_objects={
+					'SpatialTransformer': functools.partial(
+						nrn_layers.SpatialTransformer,
+						indexing=indexing)
+				}, compile=False)
 
-			if self.arch_params['vte_color_model'] is not None and self.aug_vte:
-				self.flow_bck_aug_model = load_model(self.arch_params['vte_flow_bck_model'],
-												 custom_objects={
-													 'SpatialTransformer': functools.partial(
-														 nrn_layers.SpatialTransformer,
-														 indexing=indexing)
-												 }, compile=False
-											 )
-				self.color_aug_model = load_model(self.arch_params['vte_color_model'], compile=False)
+			if self.arch_params['tm_color_model'] is not None and self.aug_tm:
+				self.flow_bck_aug_model = load_model(
+					self.arch_params['tm_flow_bck_model'],
+					custom_objects={
+						'SpatialTransformer': functools.partial(
+							nrn_layers.SpatialTransformer,
+							indexing=indexing)
+					}, compile=False)
+				self.color_aug_model = load_model(self.arch_params['tm_color_model'], compile=False)
 
 
 	def _create_augmented_examples(self):
@@ -466,29 +440,33 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 				Y_train_aug[i] = Y_aug
 
 
-		elif self.aug_vte and self.data_params['n_vte_aug'] is not None \
-				and self.data_params['n_vte_aug'] <= 100:
-			aug_name = 'VTE'
-			source_train_gen_vteaug = self._generate_augmented_batch(
+		elif self.aug_tm and self.data_params['n_tm_aug'] is not None \
+				and self.data_params['n_tm_aug'] <= 100:
+			# TODO: this section is not well tested since it is no longer really used, we do even coupled
+			# augmentation in the generator
+			aug_name = 'tm'
+			source_train_gen_tmaug = self._generate_augmented_batch(
 				X_to_aug=self.X_labeled_train, Y_to_aug=self.segs_labeled_train,
-				aug_by='vte',
+				aug_by='tm',
 				randomize=False,
 			)
 
 			# augment and append to training set
-			n_aug_batches = int(np.ceil(self.data_params['n_vte_aug'] / float(self.batch_size)))
+			n_aug_batches = int(np.ceil(self.data_params['n_tm_aug'] / float(self.batch_size)))
 
 			X_preaug = [None] * n_aug_batches
 			Y_preaug = [None] * n_aug_batches
 			X_train_aug = [None] * n_aug_batches
 			Y_train_aug = [None] * n_aug_batches
+			ids_train_aug = []
 
 			for i in range(n_aug_batches):
 				# get source examples to perform augmentation on
-				X_preaug[i], Y_preaug[i], X_train_aug[i], Y_train_aug[i] = next(source_train_gen_vteaug)
+				X_preaug[i], Y_preaug[i], X_train_aug[i], Y_train_aug[i], aug_ids_batch = next(source_train_gen_tmaug)
+				ids_train_aug += aug_ids_batch
 
-			self.X_vte_aug = np.concatenate(X_train_aug, axis=0)[:self.data_params['n_vte_aug']]
-			self.Y_vte_aug = np.concatenate(Y_train_aug, axis=0)[:self.data_params['n_vte_aug']]
+			self.X_tm_aug = np.concatenate(X_train_aug, axis=0)[:self.data_params['n_tm_aug']]
+			self.Y_tm_aug = np.concatenate(Y_train_aug, axis=0)[:self.data_params['n_tm_aug']]
 
 		print(self.X_labeled_train.shape)
 		self.X_labeled_train = np.concatenate([self.X_labeled_train, X_train_aug], axis=0)
@@ -538,7 +516,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 			color_delta = None
 			start = time.time()
-			if aug_batch_by == 'flow':
+			if aug_batch_by == 'rand':
 				X_aug, flow = self.flow_rand_aug_model.predict(X_to_aug)
 
 				# color augmentation by additive or multiplicative factor
@@ -557,7 +535,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 				# Y_to_aug = classification_utils.labels_to_onehot(Y_to_aug, label_mapping=self.label_mapping)
 				Y_aug = self.seg_warp_model.predict([Y_to_aug, flow])
-			elif aug_batch_by == 'vte':
+			elif aug_batch_by == 'tm':
 				if self.arch_params['do_coupled_sampling']:
 					# use the same target for flow and color
 					X_flowtgt, _, ul_flow_ids = next(self.unlabeled_gen_raw)
@@ -628,7 +606,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 					self.aug_colored = np.reshape(
 						np.transpose(self.aug_colored[..., slice_idxs, :], (0, 3, 1, 2, 4)), (-1,) + self.pred_img_shape)
 
-				if (aug_by == 'flow' or aug_by == 'vte') and self.arch_params['warpoh']:
+				if (aug_by == 'rand' or aug_by == 'tm') and self.arch_params['warpoh']:
 					# we used the onehot warper in these cases
 					Y_to_aug_slices = np.reshape(
 						np.transpose(
@@ -670,7 +648,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 				X_to_aug_slices = X_to_aug
 				Y_to_aug_slices = Y_to_aug
 
-			if convert_onehot and not ((aug_by == 'flow' or aug_by == 'vte') and self.arch_params['warpoh']):
+			if convert_onehot and not ((aug_by == 'rand' or aug_by == 'tm') and self.arch_params['warpoh']):
 				# if we don't have onehot segs already, convert them after slicing
 				start = time.time()
 				Y_to_aug_slices = classification_utils.labels_to_onehot(
@@ -735,12 +713,10 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 
 	def compile_models(self, run_options=None, run_metadata=None):
-		#if self.n_dims == 3:
 		# compute dice over every label except bkg
-		dice_loss = vm_losses.diceLoss_labels(list(range(1, len(self.label_mapping))), n_dims=self.n_pred_dims)
-		#else:
-		#	dice_loss = vm_losses.diceLoss2D
-	
+		dice_loss = vm_losses.diceLoss_labels(
+			list(range(1, len(self.label_mapping))), n_dims=self.n_pred_dims)
+
 		if not run_options is None and not run_metadata is None:
 			self.segmenter_model.compile(
 				loss=self.loss_fn,
@@ -761,6 +737,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 	def make_train_results_im(self):
 		Y_pred = self.segmenter_model.predict(self.X_train_batch)
 
+		# keep track of which ids we are training on
 		with open(os.path.join(self.exp_dir, 'train_ids.txt'), 'w') as f:
 			f.writelines([i + '\n' for i in self.all_train_ids])
 		with open(os.path.join(self.exp_dir, 'ul_ids.txt'), 'w') as f:
@@ -785,13 +762,13 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 
 	def make_test_results_im(self, epoch_num=None):
-		Y_pred = self.segmenter_model.predict(self.X_test_batch)
+		Y_pred = self.segmenter_model.predict(self.X_valid_batch)
 
 		return self._make_results_im(
-			[self.X_test_batch, self.Y_test_batch, Y_pred],
+			[self.X_valid_batch, self.Y_valid_batch, Y_pred],
 		    ['input_im', 'gt_seg', 'pred_seg'],
 			is_seg=[False, True, True],
-			overlay_on_ims=[None, self.X_test_batch, self.X_test_batch],
+			overlay_on_ims=[None, self.X_valid_batch, self.X_valid_batch],
 		)
 
 
@@ -819,12 +796,15 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 				vis_utils.label_ims(np.transpose(
 						brain_vis_utils.overlay_segs_on_ims_batch(
 							ims=np.transpose(overlay_on_ims[i], (1, 2, 3, 0)),
-							segs=np.transpose(classification_utils.onehot_to_labels(batch, label_mapping=self.label_mapping), (1, 2, 0)),
+							segs=np.transpose(
+								classification_utils.onehot_to_labels(
+									batch, label_mapping=self.label_mapping), (1, 2, 0)),
 							include_labels=self.label_mapping,
 							draw_contours=True,
 						),
 						(3, 0, 1, 2)), []),
-				vis_utils.label_ims(batch[..., [show_label_idx]], 'label {}'.format(self.label_mapping[show_label_idx]), normalize=True)], axis=1) \
+				vis_utils.label_ims(batch[..., [show_label_idx]],
+									'label {}'.format(self.label_mapping[show_label_idx]), normalize=True)], axis=1) \
 			for i, batch in enumerate(input_im_batches) if batch is not None
 		], axis=1)
 
@@ -832,23 +812,15 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 
 	def get_n_train(self):
-		if self.n_pred_dims == 2 and self.n_aug_dims == 2:
-			return min(100, self.X_labeled_train.shape[0] * self.X_labeled_train.shape[-2])
-		elif self.n_pred_dims == 2 and self.n_aug_dims == 3:
-			return min(100, len(self.dataset.files_labeled_train) * self.X_labeled_train.shape[-2])
-		else:
-			return self.X_labeled_train.shape[0]
-
+		# number of volumes times number of z-slices
+		return min(100, len(self.dataset.files_labeled_train) * self.X_labeled_train.shape[-2])
 
 	def get_n_test(self):
+		# number of volumes only, since we will evaluate all slices
 		return self.X_labeled_valid.shape[0]
 
 
-	def train_discriminator(self):
-		return [], []
-
-
-	def train_joint(self):
+	def train_on_batch(self):
 		start = time.time()
 		#self.iter_count += 1
 		self.aug_target = None
@@ -899,36 +871,33 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 		return classifier_loss, classifier_loss_names
 
 
-	def test_joint(self):
-		test_losses = []
+	def test_batches(self):
+		valid_losses = []
 
-		n_test_examples = 25#len(self.dataset.files_labeled_valid)
+		# just validate on a smaller set during training so it doesnt take too long
+		n_test_examples = 25 # len(self.dataset.files_labeled_valid)
 		cces, dice, accs = self._eval_from_gen(self.eval_valid_gen, n_test_examples)
 
-		test_losses += [np.mean(cces), np.mean(dice[:, 1:]), np.mean(accs)]
-		test_loss_names = ['valid_' + ln for ln in self.loss_names[0:]] + ['valid_acc']# include CE
+		valid_losses += [np.mean(cces), np.mean(dice[:, 1:]), np.mean(accs)]
+		valid_loss_names = ['valid_' + ln for ln in self.loss_names[0:]] + ['valid_acc']# include CE
 
 		# shift buffer up
 		self.validation_losses_buffer[:-1] = self.validation_losses_buffer[1:]
 
 		# since our loss is -dice, include -loss in the buffer because experiment logic checks if it is going up
-		self.validation_losses_buffer[-1] = -test_losses[1] 
+		self.validation_losses_buffer[-1] = -valid_losses[1]
 
-		assert len(test_losses) == len(test_loss_names)
-		return test_losses, test_loss_names
+		assert len(valid_losses) == len(valid_loss_names)
+		return valid_losses, valid_loss_names
 
 	def _eval_from_gen(self, eval_gen, n_test_examples):
 		batch_size = min(self.batch_size, 10) # just make batches manually, this way we can make sure we test everything
 		# test metrics: categorical cross-entropy and dice
 
-		cces, dice_per_label, accs, all_eval_ids = segmenter_networks.eval_seg_from_gen(
+		cces, dice_per_label, accs, all_eval_ids = utils.eval_seg_from_gen(
 			self.segmenter_model, eval_gen=eval_gen, label_mapping=self.label_mapping,
 			n_eval_examples=n_test_examples, batch_size=batch_size, logger=self.logger)
 		return cces, dice_per_label, accs
-
-
-	def eval(self):
-		return 0
 
 
 	def update_epoch_count(self, epoch):

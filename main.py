@@ -47,7 +47,7 @@ named_data_params = {
 		'n_validation': 50,
 		'load_vols': True,
 		'aug_in_gen': True,
-		'n_vte_aug': None,
+		'n_tm_aug': None,
 		'n_flow_aug': None,
 		'warp_labels': True,
 		'n_dims': 3,  # TODO: deprecate?
@@ -69,7 +69,7 @@ named_data_params = {
 		'n_validation': 50,
 		'load_vols': True,
 		'aug_in_gen': True,
-		'n_vte_aug': None,
+		'n_tm_aug': None,
 		'n_flow_aug': None,
 		'warp_labels': True,
 		'n_dims': 3,  # TODO: deprecate?
@@ -92,7 +92,7 @@ named_data_params = {
 		'n_validation': 50,
 		'load_vols': True,
 		'aug_in_gen': True,
-		'n_vte_aug': None,
+		'n_tm_aug': None,
 		'n_flow_aug': None,
 		'warp_labels': True,
 	},
@@ -118,7 +118,7 @@ named_data_params = {
 		'n_validation': 40,
 		'load_vols': True,
 		'aug_in_gen': True,
-		'n_vte_aug': None,
+		'n_tm_aug': None,
 		'n_flow_aug': None,
 		'use_labels': voxelmorph_labels,
 		'warp_labels': True,
@@ -133,32 +133,32 @@ if __name__ == '__main__':
 	ap = argparse.ArgumentParser()
 	# common params
 	ap.add_argument('exp_type', nargs='*', type=str, help='trans (transform model), fss (few-shot segmentation)')
-	ap.add_argument('-gpu', nargs='*', type=int, help='gpu id(s) to use', default=1)
-	ap.add_argument('-batch_size', nargs='?', type=int, default=16)
-	ap.add_argument('-data', nargs='?', type=str, help='name of dataset', default=None)
+	ap.add_argument('--gpu', nargs='*', type=int, help='gpu id(s) to use', default=1)
+	ap.add_argument('--batch_size', nargs='?', type=int, default=16)
+	ap.add_argument('--data', nargs='?', type=str, help='name of dataset', default=None)
 
-	ap.add_argument('-model', type=str, help='model architecture', default=None)
-	ap.add_argument('-epoch', nargs='?', help='epoch number or "latest"', default=None)
+	ap.add_argument('--model', type=str, help='model architecture', default=None)
+	ap.add_argument('--epoch', nargs='?', help='epoch number or "latest"', default=None)
 
-	ap.add_argument('-print_every', nargs='?', type=int,
+	ap.add_argument('--print_every', nargs='?', type=int,
 					help='Number of seconds between printing training batches as images', default=120)
 
-	ap.add_argument('-lr', nargs='?', type=float, help='Learning rate', default=5e-4)
-	ap.add_argument('-debug', action='store_true', help='Load fewer and save more often', default=False)
-	ap.add_argument('-loadn', type=int, help='Load fewer and save more often', default=None)
+	ap.add_argument('--lr', nargs='?', type=float, help='Learning rate', default=5e-4)
+	ap.add_argument('--debug', action='store_true', help='Load fewer and save more often', default=False)
+	ap.add_argument('--loadn', type=int, help='Load fewer and save more often', default=None)
 
-	ap.add_argument('-early', action='store_true', help='Simply run eval function', default=False,
+	ap.add_argument('--early', action='store_true', help='Simply run eval function', default=False,
 					dest='early_stopping')
 
-	ap.add_argument('-from_dir', nargs='?', default=None, help='Load experiment from dir instead of by params')
+	ap.add_argument('--from_dir', nargs='?', default=None, help='Load experiment from dir instead of by params')
 
-	ap.add_argument('-flow_from_dir', nargs='?', default=None, help='Load flow params from dir')
-	ap.add_argument('-color_from_dir', nargs='?', default=None, help='Load color params from dir')
+	ap.add_argument('--flow_from_dir', nargs='?', default=None, help='Load flow params from dir')
+	ap.add_argument('--color_from_dir', nargs='?', default=None, help='Load color params from dir')
 
-	ap.add_argument('-init_from', nargs='*', default=None, help='List of model files to try and initialize weights from. Will attempt to match model names')
-	ap.add_argument('-init_weights', action='store_true', help='Load as many models as we can, and give up on any we cannot find', default=False)
-	ap.add_argument('-exp_dir', nargs='?', type=str, help='experiments directory to put each experiment in',
-					default='experiments')
+	ap.add_argument('--init_from', nargs='*', default=None,
+					help='List of model files to try and initialize weights from. Will attempt to match model names')
+	ap.add_argument('--init_weights', action='store_true', default=False,
+					help='Load as many models as we can, and give up on any we cannot find')
 
 	# training params
 	ap.add_argument('--train.patience', nargs='?', type=int, default=20,
@@ -167,30 +167,32 @@ if __name__ == '__main__':
 	# data params
 	ap.add_argument('-split', nargs='?', type=int, default=None,
 					help='ID of random train-validation dataset split to load')
-	ap.add_argument('-testsplit', nargs='?', type=int, default=None,
-					help='Seed of n-shot examples selected from test set')
+
+	# augmentation params
 	ap.add_argument('--aug.flow_amp', nargs='?', type=int, default=None,
-					dest='aug_flow_flow_amp',
+					dest='aug_rand_flow_amp',
 					help='Uniform amplitude of random flow field to start with')
 	ap.add_argument('--aug.flow_sigma', nargs='?', type=int, default=None,
-					help='Amount to blur random flow field', dest='aug_flow_blur_sigma')
+					help='Amount to blur random flow field', dest='aug_rand_blur_sigma')
 	ap.add_argument('--aug.n_aug', nargs='?', type=int, default=None,
 					help='Number of new augmented examples to add', dest='data_n_aug')
 
-	# segmentation params
-	ap.add_argument('-aug_vte', action='store_true', help='do aug with the models in arch_params', default=False)
-	ap.add_argument('-aug_sas', action='store_true', help='do aug with the flow model in arch_params', default=False)
-	ap.add_argument('-vte_epoch', nargs='?', help='epoch number or latest', type=int, default=None)
-	ap.add_argument('-aug_hand', action='store_true', help='apply hand aug', default=False)
-	ap.add_argument('-aug_flow', action='store_true', help='apply random flow field aug', default=False)
-
-	# fss params
-	ap.add_argument('-coupled', action='store_true', help='Coupled sampling of targets for fss', default=False)
+	# few-shot segmentation params
+	ap.add_argument('--aug_sas', action='store_true', default=False,
+					help='do aug with the flow model in arch_params')
+	ap.add_argument('--aug_rand', action='store_true', default=False,
+					help='do aug with random flow fields and rand multiplicative intensity')
+	ap.add_argument('--aug_tm', action='store_true', default=False,
+					help='do aug with the transform models in arch_params')
+	ap.add_argument('--coupled', action='store_true', default=False,
+					help='coupled sampling of targets for transform models and fss')
 	args = ap.parse_args()
 	experiment_engine.configure_gpus(args.gpu)
 
 	if not args.debug:
 		end_epoch = 20000
+		save_every_n_epochs = 50
+		test_every_n_epochs = 50
 	else:
 		save_every_n_epochs = 4
 		test_every_n_epochs = 2
@@ -283,7 +285,7 @@ if __name__ == '__main__':
 			exp = TransformModel.TransformModelTrainer(data_params, arch_params, exp_root=args.exp_dir)
 
 			end_epoch = arch_params['end_epoch']
-			vte_end_epoch = end_epoch
+			tm_end_epoch = end_epoch
 		elif exp_type.lower() == 'fss':
 			'''''''''''''''''''''''''''
 			Few shot segmentation
@@ -298,13 +300,13 @@ if __name__ == '__main__':
 					'end_epoch': 10000,
 					'pretrain_l2': 500,
 					'warpoh': False,
-					'vte_flow_model': (
+					'tm_flow_model': (
 						'experiments/'
 						'VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1/models/vm2_cc_fwd_epoch500_iter50000.h5'),
-					'vte_flow_bck_model': (
+					'tm_flow_bck_model': (
 						'experiments/'
 						'VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1/models/vm2_cc_bck_epoch200_iter20000.h5'),
-					'vte_color_model': (
+					'tm_color_model': (
 						'experiments/'
 						'VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_color_unet_invflow-VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1_c-srcsp_incontours_grad-si-l2_regcwt1_l2-src_sigI0.1/models/color_delta_unet_srcspace_epoch20_iter2000.h5'),
 				},
@@ -352,46 +354,43 @@ if __name__ == '__main__':
 				}
 			}
 
-			test_every_n_epochs = 200  # test this less frequently since we're not as interested in the exact value?
-
 			if args.from_dir:
 				with open(os.path.join(args.from_dir, 'arch_params.json'), 'r') as f:
 					arch_params = json.load(f)
 				with open(os.path.join(args.from_dir, 'data_params.json'), 'r') as f:
 					data_params = json.load(f)
 
-
-			if args.aug_flow:  # do flow first since otherwise this will overwrite hand
+			if args.aug_rand:  
 				data_params['load_vols'] = False
 				for k, v in flow_aug_params[args.data].items():
 					data_params[k] = v
-				data_params['aug_flow'] = True
-				if args.aug_flow_flow_amp is not None:	
-					data_params['aug_params']['flow_amp'] = args.aug_flow_flow_amp
-				if args.aug_flow_blur_sigma is not None:
-					data_params['aug_params']['blur_sigma'] = args.aug_flow_blur_sigma
-				test_every_n_epochs = 100
+				data_params['aug_rand'] = True
+				if args.aug_rand_flow_amp is not None:	
+					data_params['aug_params']['flow_amp'] = args.aug_rand_flow_amp
+				if args.aug_rand_blur_sigma is not None:
+					data_params['aug_params']['blur_sigma'] = args.aug_rand_blur_sigma
 
-			if args.aug_vte:
-				data_params['aug_vte'] = True
+			if args.aug_tm:
+				data_params['aug_tm'] = True
 				data_params['aug_sas'] = False
 				data_params['load_vols'] = False
 
 			elif args.aug_sas:
 				data_params['load_vols'] = False
 				data_params['aug_sas'] = True
-				data_params['aug_vte'] = False
+				data_params['aug_tm'] = False
 				data_params['n_sas_aug'] = data_params['n_unlabeled']
 				data_params['aug_in_gen'] = False
 			else:
-				data_params['aug_vte'] = False
+				data_params['aug_tm'] = False
 				data_params['aug_sas'] = False
 
-			if args.aug_vte or args.aug_sas:
-				if args.vte_epoch:
-					data_params['vte_epoch'] = args.vte_epoch
+			if args.aug_tm or args.aug_sas or args.aug_rand:
 				test_every_n_epochs = 100
-
+			else:
+				# test no-aug less often because it will be pretty bad and will plateau quickly
+				test_every_n_epochs = 200
+			save_every_n_epochs = 50
 			data_params['split_id'] = args.split
 
 			if args.sample_from:
@@ -403,13 +402,13 @@ if __name__ == '__main__':
 				arch_params['do_coupled_sampling'] = False
 
 
-			save_every_n_epochs = 50
+
 			exp = FewShotSegmentationExperimentClass.ExperimentSegmenter(data_params, arch_params, debug=args.debug)
 
 			early_stopping_eps = 0.001
 
 			end_epoch = arch_params['end_epoch']
-			vte_end_epoch = end_epoch
+			tm_end_epoch = end_epoch
 
 		prev_exp_dir = experiment_engine.run_experiment(
 			exp=exp, run_args=args,
