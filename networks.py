@@ -536,14 +536,14 @@ def segmenter_unet(img_shape, n_labels, params, model_name='segmenter_unet', act
 								  nf_dec=params['nf_dec'],
 								  n_convs_per_stage=params['n_convs_per_stage'],
 								  use_maxpool=params['use_maxpool'],
-								  include_residual=params['use_residuals'])
+								  use_residuals=params['use_residuals'])
 	elif n_dims == 3:
 		x = basic_networks.unet3D(x_in, img_shape, n_labels,
 								  nf_enc=params['nf_enc'],
 								  nf_dec=params['nf_dec'],
 								  n_convs_per_stage=params['n_convs_per_stage'],
 								  use_maxpool=params['use_maxpool'],
-								  include_residual=params['use_residuals'])
+								  use_residuals=params['use_residuals'])
 
 	if activation is not None:
 		seg = Activation(activation)(x)

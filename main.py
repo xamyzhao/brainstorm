@@ -434,9 +434,6 @@ if __name__ == '__main__':
 			save_every_n_epochs = 50
 			data_params['split_id'] = args.split
 
-			if args.sample_from:
-				data_params['sample_transforms_from_data_params'] = named_data_params[args.sample_from]
-
 			if args.coupled:
 				arch_params['do_coupled_sampling'] = True
 			else:

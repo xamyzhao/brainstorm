@@ -298,7 +298,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			# warp all target volumes back to source space
 
 			from keras.models import load_model
-			flow_bck_model = load_model(
+			self.flow_bck_model = load_model(
 				self.arch_params['flow_bck_model'],
 				custom_objects={
 					'SpatialTransformer': functools.partial(
@@ -308,26 +308,27 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				compile=False
 			)
 
-			# back-warp all target vols to the source space
-			# we shouldn't have to deal with aux inputs since those should be in the input space already
-			for i in range(self.X_target_train.shape[0]):
-				if i % 10 == 0:
-					self.logger.debug('Back-warping target example {} of {}'.format(
-						i, self.X_target_train.shape[0]))
-				preds = flow_bck_model.predict([
-					self.X_target_train[[i]], self.X_source_train[[0]]])
+			if self.X_source_train.shape[0] == 1: # NOTE: we can only do this for single atlas
+				# back-warp all target vols to the source space
+				# we shouldn't have to deal with aux inputs since those should be in the input space already
+				for i in range(self.X_target_train.shape[0]):
+					if i % 10 == 0:
+						self.logger.debug('Back-warping target example {} of {}'.format(
+							i, self.X_target_train.shape[0]))
+					preds = self.flow_bck_model.predict([
+						self.X_target_train[[i]], self.X_source_train[[0]]])
 
-				# assumes that transformed vol is the first pred
-				# TODO: if this is a bidir model, then back-warped vol is the 2nd pred
-				self.X_target_train[i] = preds[0]
+					# assumes that transformed vol is the first pred
+					# TODO: if this is a bidir model, then back-warped vol is the 2nd pred
+					self.X_target_train[i] = preds[0]
 
-			for i in range(self.X_target_test.shape[0]):
-				# warp our target towards our source space
-				preds = flow_bck_model.predict([
-					self.X_target_test[[i]], self.X_source_train[[0]]])
+				for i in range(self.X_target_test.shape[0]):
+					# warp our target towards our source space
+					preds = self.flow_bck_model.predict([
+						self.X_target_test[[i]], self.X_source_train[[0]]])
 
-				# assumes that transformed vol is the first pred
-				self.X_target_test[i] = preds[0]
+					# assumes that transformed vol is the first pred
+					self.X_target_test[i] = preds[0]
 
 
 		self.n_labels = len(self.label_mapping)
@@ -622,6 +623,10 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 
 			X_target, _, _, id_target = next(target_vol_gen)
+			if 'color' in self.arch_params['model_arch'] and self.X_source_train.shape[0] > 1: # more than one atlas, so we need to back-warp depending on our atlas
+				X_target = self.flow_bck_model.predict([
+					X_target, X_source])[0]
+
 
 			if self.arch_params['input_aux_labels'] is not None:
 				inputs = [X_source, X_target, source_aux_inputs]

@@ -1,9 +1,13 @@
 import sys
 
+import cv2
 import numpy as np
 import tensorflow as tf
 
 import networks
+
+sys.path.append('../pynd-lib')
+from pynd import segutils
 
 sys.path.append('../evolving_wilds')
 from cnn_utils import classification_utils
@@ -83,7 +87,7 @@ def eval_seg_sas_from_gen(sas_model, atlas_vol, atlas_labels,
 			logger.debug('Testing on subject {} of {}'.format(bi, n_eval_examples))
 		else:
 			print('Testing on subject {} of {}'.format(bi, n_eval_examples))
-		X, Y, ids = next(eval_gen)
+		X, Y, _, ids = next(eval_gen)
 		Y_oh = classification_utils.labels_to_onehot(Y, label_mapping=label_mapping)
 
 		warped, warp = sas_model.predict([atlas_vol, X])
@@ -140,7 +144,7 @@ def eval_seg_from_gen(segmenter_model,
 			logger.debug('Testing on subject {} of {}'.format(bi, n_eval_examples))
 		else:
 			print('Testing on subject {} of {}'.format(bi, n_eval_examples))
-		X, Y, ids = next(eval_gen)
+		X, Y, _, ids = next(eval_gen)
 		Y_oh = classification_utils.labels_to_onehot(Y, label_mapping=label_mapping)
 		preds_batch, cce = segment_vol_by_slice(
 			segmenter_model, X, label_mapping=label_mapping, batch_size=batch_size,
@@ -199,7 +203,10 @@ def segment_vol_by_slice(segmenter_model, X, label_mapping, batch_size=8, Y_oh=N
 			slice_cce = segmenter_model.evaluate(
 				X_batched_slices,
 				np.transpose(Y_oh[0, :, :, sbi * batch_size : min(n_slices, (sbi + 1) * batch_size)], (2, 0, 1, 3)),
-				verbose=False)[0]
+				verbose=False)
+			# if we have multiple losses, take the first one
+			if isinstance(slice_cce, list):
+				slice_cce = slice_cce[0]
 
 			# we want an average over slices, so make sure we count the correct number in the batch
 			cce_total += slice_cce * X_batched_slices.shape[0]
@@ -216,10 +223,6 @@ def segment_vol_by_slice(segmenter_model, X, label_mapping, batch_size=8, Y_oh=N
 ######################
 # Visualization utils
 ######################
-sys.path.append('../pynd-lib/pynd')
-import segutils
-import cv2
-
 def draw_segs_on_slice(vol_slice, seg_slice,
                        include_labels=None,
                        colors=None,
@@ -255,7 +258,7 @@ def draw_segs_on_slice(vol_slice, seg_slice,
 
 	# make a new segmentation map with labels as ascending integers,
 	# since this is what segutils expects
-	pruned_slice = np.zeros(seg_slice.shape)
+	pruned_slice = np.zeros(seg_slice.shape, dtype=int)
 	for i, l in enumerate(include_labels):
 		pruned_slice[seg_slice == l] = i + 1
 
@@ -273,8 +276,6 @@ def overlay_segs_on_ims_batch(ims, segs,
                               subjects_axis=-1,
                               colormap=None,
                               ):
-
-	print('Including labels {}'.format(include_labels))
 
 	# if the input is a single image, pretend it is a batch of size 1
 	if len(ims.shape) == 2:

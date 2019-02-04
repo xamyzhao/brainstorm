@@ -108,7 +108,7 @@ class MRIDataset(object):
 		# get validation files from the end
 		self.valid_files = self.valid_files[:self.params['n_validation']]
 
-		if self.params['n_unlabeled'] is None or self.params['n_unlabeled'] == -1 or self.params['n_shot'] == -1:
+		if self.params['n_unlabeled'] is None or self.params['n_unlabeled'] == -1:
 			# if any of n_unlabeled or n_shot is -1, that means to use everything
 			self.n_train = len(self.train_files)
 		else:

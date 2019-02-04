@@ -831,12 +831,15 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 		start = time.time()
 
-		classifier_loss = self.segmenter_model.train_on_batch(
+		segmenter_loss = self.segmenter_model.train_on_batch(
 			self.X_train_batch, self.Y_train_batch)
+		if not isinstance(segmenter_loss, list):
+			segmenter_loss = [segmenter_loss]
+
 
 		if self.do_profile:
 			self.profiler_logger.info('train_on_batch took {}'.format(time.time() - start))
-		classifier_loss_names = ['train_' + ln for ln in self.loss_names]
+		segmenter_loss_names = ['train_' + ln for ln in self.loss_names]
 
 		self.batch_count += 1
 		self.test_batch_count = 0
@@ -850,8 +853,8 @@ class Segmenter(ExperimentClassBase.Experiment):
 				self.profiler_logger.handlers[0].close()
 				self.dataset.profiler_logger = None
 
-		assert len(classifier_loss) == len(classifier_loss_names)
-		return classifier_loss, classifier_loss_names
+		assert len(segmenter_loss) == len(segmenter_loss_names)
+		return segmenter_loss, segmenter_loss_names
 
 
 	def test_batches(self):
