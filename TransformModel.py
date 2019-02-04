@@ -41,18 +41,12 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			if self.recon_loss_name is not None:
 				exp_name += '_{}'.format(self.recon_loss_name)
 				if 'l2' in self.recon_loss_name:
-					exp_name += '-sigIw{}'.format(self.sigma_Iw)
+					exp_name += '-wt{}'.format(self.recon_loss_wt)
 				elif 'cc' in self.recon_loss_name:
 					exp_name += '-win{}'.format(self.cc_win_size_Iw)
 					exp_name += '-wt{}'.format(self.cc_loss_weight)
 
 		elif 'color' in self.arch_params['model_arch']:
-			exp_name += '_invflow-{}'.format(os.path.splitext(os.path.basename(
-				self.arch_params['flow_bck_model'].split('/models/'
-			)[0]))[0])
-			if 'pretrain_flow' in self.arch_params.keys():
-				exp_name += '_pt{}'.format(self.arch_params['pretrain_flow'])
-
 			if self.arch_params['input_aux_labels'] is not None:
 				if 'segs_oh' in self.arch_params['input_aux_labels']:
 					exp_name += '_insegsoh'
@@ -68,9 +62,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				                                  self.transform_reg_wt)
 
 			if self.recon_loss_name is not None:
-				exp_name += '_{}'.format(self.recon_loss_name)
-				if 'l2' in self.recon_loss_name:
-					exp_name += '_sigI{}'.format(self.sigma_I)
+				exp_name += '_{}-wt{}'.format(self.recon_loss_name, self.recon_loss_wt)
 					
 		self.model_name = exp_name
 
@@ -546,9 +538,13 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 	def create_generators(self, batch_size):
 		self.batch_size = batch_size
 
+
 		source_vol_gen = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_train'],
-			batch_size=batch_size, load_segs=False, randomize=True,
+			batch_size=batch_size, 
+			load_segs=self.arch_params['input_aux_labels'] is not None and 'segs' in self.arch_params['input_aux_labels'], 
+			load_contours=self.arch_params['input_aux_labels'] is not None and 'contours' in self.arch_params['input_aux_labels'],
+			randomize=True,
 			return_ids=True,
 		)
 
@@ -580,36 +576,55 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 
 	def _generate_source_target_pairs(self, batch_size, source_vol_gen=None, target_vol_gen=None, return_ids=False):
-		# create source aux input here in case we need it later
-		if self.arch_params['input_aux_labels'] is not None:
-			if 'segs_oh' in self.arch_params['input_aux_labels']:
-				# first channel will be segs in label form
-				Y_source_onehot = classification_utils.labels_to_onehot(
-					self.segs_source_train[..., [0]], label_mapping=self.label_mapping)
-				self.source_aux_inputs = Y_source_onehot
-			elif 'segs' in self.arch_params['input_aux_labels']:
-				self.source_aux_inputs = self.segs_source_train
-			else:
-				self.source_aux_inputs = None
+		if self.X_source_train.shape[0] == 1:
+			# single atlas, no need to sample from generator
+			X_source = self.X_source_train
+			segs_source = self.Y_source_train
+			contours_source = self.contours_source_train
+			id_source = [self.source_train_files[0]]
 
-			if 'contours' in self.arch_params['input_aux_labels'] and self.source_aux_inputs is not None:
-				self.source_aux_inputs = np.concatenate([self.source_aux_inputs, self.contours_source_train], axis=-1)
-			elif 'contours' in self.arch_params['input_aux_labels'] and self.source_aux_inputs is None:
-				self.source_aux_inputs = self.contours_source_train
+			# create source aux input here in case we need it later
+			if self.arch_params['input_aux_labels'] is not None:
+				if 'segs_oh' in self.arch_params['input_aux_labels']:
+					# first channel will be segs in label form
+					Y_source_onehot = classification_utils.labels_to_onehot(
+						self.segs_source_train[..., [0]], label_mapping=self.label_mapping)
+					source_aux_inputs = Y_source_onehot
+				elif 'segs' in self.arch_params['input_aux_labels']:
+					source_aux_inputs = self.segs_source_train
+				else:
+					source_aux_inputs = None
+
+				if 'contours' in self.arch_params['input_aux_labels'] and source_aux_inputs is not None:
+					source_aux_inputs = np.concatenate([source_aux_inputs, self.contours_source_train], axis=-1)
+				elif 'contours' in self.arch_params['input_aux_labels'] and source_aux_inputs is None:
+					source_aux_inputs = self.contours_source_train
 
 		while True:
-			if self.X_source_train.shape[0] == 1:
-				# single atlas, no need to sample from generator
-				X_source = self.X_source_train
+			if self.X_source_train.shape[0] > 1:
+				X_source, segs_source, contours_source, id_source = next(source_vol_gen)
+				# create source aux input here in case we need it later
+				if self.arch_params['input_aux_labels'] is not None:
+					if 'segs_oh' in self.arch_params['input_aux_labels']:
+						# first channel will be segs in label form
+						Y_source_onehot = classification_utils.labels_to_onehot(
+							segs_source[..., [0]], label_mapping=self.label_mapping)
+						source_aux_inputs = Y_source_onehot
+					elif 'segs' in self.arch_params['input_aux_labels']:
+						source_aux_inputs = segs_source
+					else:
+						source_aux_inputs = None
 
-				id_source = [self.source_train_files[0]]
-			else:
-				X_source, _, id_source = next(source_vol_gen)
+					if 'contours' in self.arch_params['input_aux_labels'] and source_aux_inputs is not None:
+						source_aux_inputs = np.concatenate([source_aux_inputs, contours_source], axis=-1)
+					elif 'contours' in self.arch_params['input_aux_labels'] and source_aux_inputs is None:
+						source_aux_inputs = contours_source
 
-			X_target, _, id_target = next(target_vol_gen)
+
+			X_target, _, _, id_target = next(target_vol_gen)
 
 			if self.arch_params['input_aux_labels'] is not None:
-				inputs = [X_source, X_target, self.source_aux_inputs]
+				inputs = [X_source, X_target, source_aux_inputs]
 			else:
 				inputs = [X_source, X_target]
 
@@ -651,7 +666,6 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 	def train_on_batch(self):
 		X, Y, X_oh, Y_oh = next(self.train_gen)
-
 		start = time.time()
 		loss_vals = self.transform_model.train_on_batch(
 			X, Y)
@@ -703,6 +717,10 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			# last input will be aux info. if it is segmentations, just visualize one label
 			input_im_batches += [inputs[-1][..., 16]]
 			labels += ['aux_oh']
+			do_normalize += [True]
+		elif self.arch_params['input_aux_labels'] is not None and 'contours' in self.arch_params['input_aux_labels']:
+			input_im_batches += [inputs[-1][..., [-1]]]
+			labels += ['aux_contours']
 			do_normalize += [True]
 
 		if 'bidir' in self.arch_params['model_arch']:
