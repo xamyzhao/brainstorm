@@ -304,7 +304,7 @@ if __name__ == '__main__':
 				test_every_n_epochs = arch_params['test_every']
 
 
-			exp = TransformModel.TransformModelTrainer(data_params, arch_params, exp_root=args.exp_dir)
+			exp = TransformModel.TransformModelTrainer(data_params, arch_params)
 
 			end_epoch = arch_params['end_epoch']
 			tm_end_epoch = end_epoch
