@@ -50,7 +50,25 @@ named_data_params = {
 		'n_tm_aug': None,
 		'n_flow_aug': None,
 		'warp_labels': True,
-		'n_dims': 3,  # TODO: deprecate?
+	},
+	'adni-csts2-test': {
+		'dataset_name': 'adni',
+		'source_name': 'centroidsubj2',
+		'target_name': 'subjs',
+		'use_labels': voxelmorph_labels,
+		'final_test': True,
+		'n_unlabeled': 1,
+		'n_validation': 100,
+		'use_atlas_as_source': False,
+		'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
+		'img_shape': (160, 192, 224, 1),
+		'pred_img_shape': (160, 192, 1),
+		'aug_img_shape': (160, 192, 224, 1),
+		'load_vols': True,
+		'aug_in_gen': True,
+		'n_vte_aug': None,
+		'n_flow_aug': None,
+		'warp_labels': True,
 	},
 	'adni-100-bts': {  # buckner centroid to subjets
 		'dataset_name': 'adni',
@@ -312,7 +330,7 @@ if __name__ == '__main__':
 			'''''''''''''''''''''''''''
 			Few shot segmentation
 			'''''''''''''''''''''''''''
-			import FewShotSegmentationExperimentClass
+			import FewShotSegmentation
 			named_arch_params = {
 				'default': {
 					'nf_enc': [32, 32, 64, 64, 128, 128],
@@ -425,7 +443,7 @@ if __name__ == '__main__':
 
 
 
-			exp = FewShotSegmentationExperimentClass.ExperimentSegmenter(data_params, arch_params, debug=args.debug)
+			exp = FewShotSegmentation.Segmenter(data_params, arch_params, debug=args.debug)
 
 			early_stopping_eps = 0.001
 

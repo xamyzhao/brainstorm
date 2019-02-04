@@ -77,12 +77,13 @@ def eval_seg_sas_from_gen(sas_model, atlas_vol, atlas_labels,
 	dice_per_label = np.zeros((n_eval_examples, len(label_mapping)))
 	cces = np.zeros((n_eval_examples,))
 	accs = np.zeros((n_eval_examples,))
+	all_ids = []
 	for bi in range(n_eval_examples):
 		if logger is not None:
 			logger.debug('Testing on subject {} of {}'.format(bi, n_eval_examples))
 		else:
 			print('Testing on subject {} of {}'.format(bi, n_eval_examples))
-		X, Y = next(eval_gen)
+		X, Y, ids = next(eval_gen)
 		Y_oh = classification_utils.labels_to_onehot(Y, label_mapping=label_mapping)
 
 		warped, warp = sas_model.predict([atlas_vol, X])
@@ -101,6 +102,7 @@ def eval_seg_sas_from_gen(sas_model, atlas_vol, atlas_labels,
 		dice_per_label[bi] = subject_dice_per_label
 		cces[bi] = cce
 		accs[bi] = acc
+		all_ids += ids
 
 	if logger is not None:
 		logger.debug('Dice per label: {}, {}'.format(label_mapping, dice_per_label))
@@ -112,7 +114,7 @@ def eval_seg_sas_from_gen(sas_model, atlas_vol, atlas_labels,
 		print('Mean dice (no bkg): {}'.format(np.mean(dice_per_label[:, 1:])))
 		print('Mean CE: {}'.format(np.mean(cces)))
 		print('Mean accuracy: {}'.format(np.mean(accs)))
-	return cces, dice_per_label, accs
+	return cces, dice_per_label, accs, all_ids
 
 
 def eval_seg_from_gen(segmenter_model,
@@ -132,12 +134,13 @@ def eval_seg_from_gen(segmenter_model,
 	dice_per_label = np.zeros((n_eval_examples, len(label_mapping)))
 	cces = np.zeros((n_eval_examples,))
 	accs = np.zeros((n_eval_examples,))
+	all_ids = []
 	for bi in range(n_eval_examples):
 		if logger is not None:
 			logger.debug('Testing on subject {} of {}'.format(bi, n_eval_examples))
 		else:
 			print('Testing on subject {} of {}'.format(bi, n_eval_examples))
-		X, Y = next(eval_gen)
+		X, Y, ids = next(eval_gen)
 		Y_oh = classification_utils.labels_to_onehot(Y, label_mapping=label_mapping)
 		preds_batch, cce = segment_vol_by_slice(
 			segmenter_model, X, label_mapping=label_mapping, batch_size=batch_size,
@@ -155,6 +158,7 @@ def eval_seg_from_gen(segmenter_model,
 		dice_per_label[bi] = subject_dice_per_label
 		cces[bi] = cce
 		accs[bi] = acc
+		all_ids += ids
 
 	if logger is not None:
 		logger.debug('Dice per label: {}, {}'.format(label_mapping, np.mean(dice_per_label, axis=0).tolist()))
@@ -166,7 +170,7 @@ def eval_seg_from_gen(segmenter_model,
 		print('Mean dice (no bkg): {}'.format(np.mean(dice_per_label[:, 1:])))
 		print('Mean CE: {}'.format(np.mean(cces)))
 		print('Mean accuracy: {}'.format(np.mean(accs)))
-	return cces, dice_per_label, accs
+	return cces, dice_per_label, accs, all_ids
 
 
 def segment_vol_by_slice(segmenter_model, X, label_mapping, batch_size=8, Y_oh=None, compute_cce=False):
@@ -208,3 +212,124 @@ def segment_vol_by_slice(segmenter_model, X, label_mapping, batch_size=8, Y_oh=N
 		return preds, cce_total / float(n_slices)
 	else:
 		return preds
+
+######################
+# Visualization utils
+######################
+sys.path.append('../pynd-lib/pynd')
+import segutils
+import cv2
+
+def draw_segs_on_slice(vol_slice, seg_slice,
+                       include_labels=None,
+                       colors=None,
+                       draw_contours=False,
+                       use_gradient_colormap=False):
+	'''
+	Overlays segmentations on a 2D slice.
+
+	:param vol_slice: h x w image, the brain slice to overlay on top of
+	:param seg_slice: h x w array, segmentations to overlay
+		(in labels format, not one hot)
+	:param include_labels: list, visualize only specific label values
+	:param colors: n_labels x 3, specific colors to use for segmentations
+	:param draw_contours: bool, visualize segmentations as contours
+		rather than solid areas
+	:param use_gradient_colormap: bool, create the colormap as a gradient of a
+		single color rather than a rainbow
+
+ 	:return: h x w x 3 image of brain slice with segmentations overlaid on top
+	'''
+	# if no labels are specified, simply visualize all unique label values
+	if include_labels is None:
+		include_labels = list(np.unique(seg_slice).astype(int))
+
+	# if colors are not specified, make a color map
+	if colors is None:
+		if use_gradient_colormap:
+			colors = make_cmap_gradient(
+				len(include_labels) + 1, hue=0.5)
+		else:
+			colors = make_cmap_rainbow(
+				len(include_labels) + 1)
+
+	# make a new segmentation map with labels as ascending integers,
+	# since this is what segutils expects
+	pruned_slice = np.zeros(seg_slice.shape)
+	for i, l in enumerate(include_labels):
+		pruned_slice[seg_slice == l] = i + 1
+
+	seg_im = segutils.seg_overlap(
+		np.squeeze(vol_slice), pruned_slice,
+		cmap=colors,
+		do_contour=draw_contours)
+	return seg_im
+
+
+def overlay_segs_on_ims_batch(ims, segs,
+                              include_labels,
+                              draw_contours=False,
+                              use_gradient_colormap=False,
+                              subjects_axis=-1,
+                              colormap=None,
+                              ):
+
+	print('Including labels {}'.format(include_labels))
+
+	# if the input is a single image, pretend it is a batch of size 1
+	if len(ims.shape) == 2:
+		ims = np.expand_dims(ims, -1)
+
+	n_brains = ims.shape[subjects_axis]
+	out_im = []
+
+	for i in range(n_brains):
+		curr_im = np.take(ims, i, axis=subjects_axis)
+		curr_seg = np.take(segs, i, axis=subjects_axis)
+
+		if len(segs.shape) > 2:
+			curr_out_im = draw_segs_on_slice(
+				curr_im, curr_seg,
+				include_labels=include_labels,
+				draw_contours=draw_contours,
+				colors=colormap,
+				use_gradient_colormap=use_gradient_colormap,
+			)
+
+		else:
+			curr_out_im = draw_segs_on_slice(
+				curr_im, segs,
+				include_labels=include_labels,
+				draw_contours=draw_contours,
+				colors=colormap,
+				use_gradient_colormap=use_gradient_colormap,
+			)
+		out_im.append(np.expand_dims(curr_out_im, axis=subjects_axis))
+	out_im = np.concatenate(out_im, subjects_axis)
+
+	return out_im
+
+def make_cmap_gradient(nb_labels=256, hue=1.0):
+	hue = hue * np.ones((nb_labels, 1))
+	sat = np.reshape(np.linspace(1., 0., nb_labels, endpoint=True), hue.shape)
+	colors = np.concatenate([hue, sat, np.ones((nb_labels, 1), dtype=np.float32)], axis=1) * 255
+	colors = cv2.cvtColor(np.expand_dims(colors, 0).astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)[0] / 255.0
+	return colors
+
+
+
+def make_cmap_rainbow(nb_labels=256):
+	'''
+	Creates a rainbow colormap (with an RGB color value for each label)
+
+	:param nb_labels:
+	:return:
+	'''
+	# make a rainbow gradient
+	hue = np.expand_dims(np.linspace(0, 0.6, nb_labels), 1).astype(np.float32)
+	colors = np.concatenate([hue, np.ones((nb_labels, 2), dtype=np.float32)], axis=1) * 255
+
+	# convert to 0-1 range RGB
+	colors = cv2.cvtColor(np.expand_dims(colors, 0).astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)[0] / 255.0
+	return colors
+

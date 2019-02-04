@@ -6,6 +6,8 @@ import time
 
 import cv2
 import json
+from keras.optimizers import Adam
+import keras.metrics as keras_metrics
 import numpy as np
 
 import mri_loader
@@ -16,25 +18,11 @@ sys.path.append('../evolving_wilds')
 from cnn_utils import aug_utils, batch_utils, classification_utils, file_utils, vis_utils
 from cnn_utils import ExperimentClassBase
 
-
-sys.path.append('../LPAT')
-from networks import transform_network_utils, segmenter_networks
-
-sys.path.append('../voxelmorph-sandbox/')
-import voxelmorph.losses as vm_losses
-
-sys.path.append('../voxelmorph-sandbox/voxelmorph/visualization')
-import brain_vis_utils
-
-sys.path.append('../medipy-lib')
-
 sys.path.append('../neuron')
 import neuron.layers as nrn_layers
 
-from keras.optimizers import Adam, Adadelta
-import keras.metrics as keras_metrics
 
-class ExperimentSegmenter(ExperimentClassBase.Experiment):
+class Segmenter(ExperimentClassBase.Experiment):
 	def get_model_name(self):
 		exp_name = 'FewShotSeg'
 
@@ -91,7 +79,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 
 		self.model_name = exp_name
-		exp_name = super(ExperimentSegmenter, self).get_model_name()
+		exp_name = super(Segmenter, self).get_model_name()
 		self.model_name = exp_name
 		return exp_name
 
@@ -186,8 +174,8 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 			validation_losses_buff_len = arch_params['patience']
 		else:
 			validation_losses_buff_len = 10
-		super(ExperimentSegmenter, self).__init__(data_params, arch_params, 
-			prompt_delete=prompt_delete)
+		super(Segmenter, self).__init__(data_params, arch_params,
+										prompt_delete=prompt_delete)
 
 		self.validation_losses_buffer = [np.nan] * validation_losses_buff_len
 
@@ -344,7 +332,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 	def _create_augmentation_models(self, indexing='xy'):
 		# TODO: put this in a param somewhere
 
-		self.vol_warp_model = transform_network_utils.warp_model(
+		self.vol_warp_model = networks.warp_model(
 			img_shape=self.aug_img_shape,
 			interp_mode='linear',
 			indexing=indexing,
@@ -664,19 +652,19 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 				yield X_to_aug_slices, Y_to_aug_slices, X_aug, Y_aug, ul_ids
 
 	def save_exp_info(self, exp_dir, figures_dir, models_dir, logs_dir):
-		super(ExperimentSegmenter, self).save_exp_info(
+		super(Segmenter, self).save_exp_info(
 			exp_dir, figures_dir, models_dir, logs_dir)
 		self.dataset.logger = self.logger
 
 
 	def save_models(self, epoch, iter_count=None):
-		super(ExperimentSegmenter, self).save_models(epoch, iter_count=iter_count)
+		super(Segmenter, self).save_models(epoch, iter_count=iter_count)
 
 
 	def create_models(self):
 		from keras.models import Model
 
-		self.base_segmenter_model = segmenter_networks.segmenter_unet(
+		self.base_segmenter_model = networks.segmenter_unet(
 			img_shape=self.pred_img_shape,
 			n_labels=self.n_labels,
 			model_name='segmenter_unet',
@@ -695,7 +683,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 
 		self.trainer_model = self.segmenter_model # for fit_generator
 
-		super(ExperimentSegmenter, self).create_models()
+		super(Segmenter, self).create_models()
 
 
 	def load_models(self, load_epoch=None, stop_on_missing=True, init_layers=False):
@@ -707,31 +695,26 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 		if load_epoch is not None:
 			self.update_epoch_count(int(load_epoch)) 
 
-		start_epoch = super(ExperimentSegmenter, self).load_models(load_epoch)
+		start_epoch = super(Segmenter, self).load_models(load_epoch)
 
 		return start_epoch
 
 
 	def compile_models(self, run_options=None, run_metadata=None):
-		# compute dice over every label except bkg
-		dice_loss = vm_losses.diceLoss_labels(
-			list(range(1, len(self.label_mapping))), n_dims=self.n_pred_dims)
-
 		if not run_options is None and not run_metadata is None:
 			self.segmenter_model.compile(
 				loss=self.loss_fn,
 				optimizer=Adam(lr=self.arch_params['lr'], amsgrad=True),
-				metrics=[dice_loss],
 				options=run_options, run_metadata=run_metadata
 			)
 		else:
 			self.segmenter_model.compile(
 				loss=self.loss_fn,
 				optimizer=Adam(lr=self.arch_params['lr'], amsgrad=True),
-				metrics=[dice_loss])
+			)
 		
-		self.loss_names = [self.loss_name, 'dice']
-		super(ExperimentSegmenter, self).compile_models()
+		self.loss_names = [self.loss_name]
+		super(Segmenter, self).compile_models()
 
 
 	def make_train_results_im(self):
@@ -794,7 +777,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 			vis_utils.label_ims(batch, labels[i], inverse_normalize=do_normalize[i]) if not is_seg[i] else
 			np.concatenate([  # we want two images here: overlay and a single label
 				vis_utils.label_ims(np.transpose(
-						brain_vis_utils.overlay_segs_on_ims_batch(
+						utils.overlay_segs_on_ims_batch(
 							ims=np.transpose(overlay_on_ims[i], (1, 2, 3, 0)),
 							segs=np.transpose(
 								classification_utils.onehot_to_labels(
@@ -879,7 +862,7 @@ class ExperimentSegmenter(ExperimentClassBase.Experiment):
 		cces, dice, accs = self._eval_from_gen(self.eval_valid_gen, n_test_examples)
 
 		valid_losses += [np.mean(cces), np.mean(dice[:, 1:]), np.mean(accs)]
-		valid_loss_names = ['valid_' + ln for ln in self.loss_names[0:]] + ['valid_acc']# include CE
+		valid_loss_names = ['valid_' + ln for ln in ['CCE', 'dice_nobkg', 'acc']]
 
 		# shift buffer up
 		self.validation_losses_buffer[:-1] = self.validation_losses_buffer[1:]
