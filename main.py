@@ -224,6 +224,10 @@ if __name__ == '__main__':
 					help='do aug with random flow fields and rand multiplicative intensity')
 	ap.add_argument('--aug_tm', action='store_true', default=False,
 					help='do aug with the transform models in arch_params')
+	ap.add_argument('--aug_tmf', action='store_true', default=False,
+					help='do aug with the flow transform model')
+	ap.add_argument('--aug_tmfrm', action='store_true', default=False,
+					help='do aug with the flow transform model and rand multiplicative intensity')
 	ap.add_argument('--coupled', action='store_true', default=False,
 					help='coupled sampling of targets for transform models and fss')
 	args = ap.parse_args()
@@ -341,21 +345,40 @@ if __name__ == '__main__':
 					'pretrain_l2': 500,
 					'warpoh': False,
 					'tm_flow_model': (
+						'experiments/voxelmorph/'
+						'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
+					),
+					'tm_flow_bck_model': (
+						'experiments/voxelmorph/'
+						'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
+					),
+					'tm_color_model': (
+						'experiments/'
+						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
+						'/models/color_delta_unet_epoch10_iter1000.h5'),
+				},
+				'2atlas': {
+					'nf_enc': [32, 32, 64, 64, 128, 128],
+					'n_convs_per_stage': 2,
+					'use_maxpool': True,
+					'use_residuals': False,
+					'end_epoch': 10000,
+					'pretrain_l2': 500,
+					'warpoh': False,
+					'tm_flow_model': (
 						'experiments/'
 						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
-						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
 						'/models/vm2_cc_fwd_epoch500_iter50000.h5'),
 					'tm_flow_bck_model': (
 						'experiments/'
 						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
-						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
 						'/models/vm2_cc_bck_epoch500_iter50000.h5'),
 					'tm_color_model': (
 						'experiments/'
 						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
-						#'VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_color_unet_invflow-VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1_c-srcsp_incontours_grad-si-l2_regcwt1_l2-src_sigI0.1/models/color_delta_unet_srcspace_epoch20_iter2000.h5'),
 						'/models/color_delta_unet_epoch10_iter1000.h5'),
 				},
+
 			}
 
 			if args.from_dir:
@@ -406,11 +429,13 @@ if __name__ == '__main__':
 				with open(os.path.join(args.from_dir, 'data_params.json'), 'r') as f:
 					data_params = json.load(f)
 
-			if args.aug_rand:  
+			if args.aug_rand or args.aug_tmfrm:
 				data_params['load_vols'] = False
 				for k, v in flow_aug_params[args.data].items():
 					data_params[k] = v
-				data_params['aug_rand'] = True
+				data_params['aug_rand'] = args.aug_rand
+				data_params['aug_randmult'] = args.aug_tmfrm
+
 				if args.aug_rand_flow_amp is not None:	
 					data_params['aug_params']['flow_amp'] = args.aug_rand_flow_amp
 				if args.aug_rand_blur_sigma is not None:
@@ -418,6 +443,10 @@ if __name__ == '__main__':
 
 			if args.aug_tm:
 				data_params['aug_tm'] = True
+				data_params['aug_sas'] = False
+				data_params['load_vols'] = False
+			elif args.aug_tmfrm:
+				data_params['aug_tmf'] = True
 				data_params['aug_sas'] = False
 				data_params['load_vols'] = False
 
@@ -431,11 +460,12 @@ if __name__ == '__main__':
 				data_params['aug_tm'] = False
 				data_params['aug_sas'] = False
 
-			if args.aug_tm or args.aug_sas or args.aug_rand:
+			if args.aug_tm or args.aug_sas or args.aug_rand or args.aug_tmfrm:
 				test_every_n_epochs = 100
 			else:
 				# test no-aug less often because it will be pretty bad and will plateau quickly
 				test_every_n_epochs = 200
+
 			save_every_n_epochs = 50
 			data_params['split_id'] = args.split
 

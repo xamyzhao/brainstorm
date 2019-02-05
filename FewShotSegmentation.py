@@ -64,10 +64,19 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 			exp_name += '-{}'.format(self.aug_model_name)
 
-			if 'sample_transforms_from_data_params' in self.data_params.keys():
-				exp_name += '_samp-{}'.format(self.transforms_dataset.display_name)
 			if self.arch_params['do_coupled_sampling']:
 				exp_name += '_coupled'
+		if self.aug_tmf:
+			exp_name += '_tm-flowonly-aug'
+			if self.data_params['n_tm_aug'] is not None and not self.data_params['aug_in_gen']:
+				exp_name += '{}'.format(self.data_params['n_tm_aug'])
+			else:
+				exp_name += '-gen'
+
+			exp_name += '-{}'.format(self.aug_model_name)
+
+			if self.aug_randmult:
+				exp_name += '-randmult'
 
 		if self.aug_sas:
 			exp_name += '_sasaug'
@@ -124,15 +133,22 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 		self.n_aug = None  # do augmentation through the generator by default
 
+		self.aug_tm = False # flow and appearance transform models
+		self.aug_sas = False # flow model for single-atlas segmentation
+		self.aug_rand = False # random flow and multiplicative intensity
+
+		# ablation studies
+		self.aug_tmf = False  # flow transform model only
+		self.aug_randmult = False # random multiplicative intensity
+
+
 		if 'aug_flow' in data_params.keys() and data_params['aug_flow']:
 			self.aug_rand = True
 			if 'n_flow_aug' in data_params.keys() and data_params['n_flow_aug'] is not None:
 				self.n_aug = data_params['n_flow_aug']
-		else:
-			self.aug_rand = False
+		elif 'aug_randmult' in data_params.keys() and data_params['aug_randmult']:
+			self.aug_randmult = True
 
-		self.aug_tm = False
-		self.aug_sas = False
 		if data_params['aug_tm']:
 			self.aug_tm = True
 			self.aug_sas = False
@@ -143,6 +159,8 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self.aug_tm = False
 			if 'n_sas_aug' in data_params.keys() and data_params['n_sas_aug'] is not None:
 				self.n_aug = data_params['n_sas_aug']
+		elif data_params['aug_tmf']:
+			self.aug_tmf = True
 
 		# come up with a name for our flow and color models so we can put them in this model name
 		if self.arch_params['tm_flow_model'] is not None and self.arch_params['tm_color_model'] is not None \
@@ -230,6 +248,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 	def create_generators(self, batch_size):
 		self.batch_size = batch_size
 
+		# generator for labeled training examples that we wish to augment
 		self.source_gen = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_train'], batch_size=1,
 			randomize=True,
@@ -261,6 +280,11 @@ class Segmenter(ExperimentClassBase.Experiment):
 				aug_by += ['tm']
 			if self.aug_rand:
 				aug_by += ['flow']
+
+			if self.aug_tmf and self.aug_randmult:
+				aug_by += ['tmf-randmult']
+			elif self.aug_tmf and not self.aug_randmult:
+				aug_by += ['tmf']
 
 			# these need to be done in the generator
 			self.aug_train_gen = self._generate_augmented_batch(
@@ -537,6 +561,34 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 				# Y_to_aug = classification_utils.labels_to_onehot(Y_to_aug, label_mapping=self.label_mapping)
 				Y_aug = self.seg_warp_model.predict([source_segs, flow])
+			elif 'tmf' in aug_batch_by:
+				# ablation study with our flow transform model and either no appearance model or a rand appearance model
+
+				# only sample a flow target
+				X_flowtgt, _, _, ul_flow_ids = next(self.unlabeled_gen_raw)
+				ul_ids += ul_flow_ids
+
+				if self.do_profile:
+					self.profiler_logger.info('Sampling aug tgt took {}'.format(time.time() - st))
+				self.aug_target = X_flowtgt
+
+				_, flow = self.flow_aug_model.predict([source_X, X_flowtgt])
+				X_aug = self.vol_warp_model.predict([source_X, flow])
+				if 'randmult' in aug_batch_by:
+					X_aug *= np.tile(
+						1. + (np.random.rand(X_aug.shape[0], 1, 1, 1) * 2. - 1.) * self.data_params['aug_params'][
+							'mult_amp'],
+						(1,) + X_aug.shape[1:])
+					X_aug = np.clip(X_aug, 0., 1.)
+
+				if self.do_profile:
+					self.profiler_logger.info('Running flow aug took {}'.format(time.time() - st))
+
+				st = time.time()
+				# now warp the labels to match
+				Y_aug = self.seg_warp_model.predict([source_segs, flow])
+				if self.do_profile:
+					self.profiler_logger.info('Warping labels took {}'.format(time.time() - st))
 			elif aug_batch_by == 'tm':
 				if self.arch_params['do_coupled_sampling']:
 					# use the same target for flow and color
