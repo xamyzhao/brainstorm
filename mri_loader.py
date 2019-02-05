@@ -456,7 +456,7 @@ class MRIDataset(object):
 
 	def gen_vols_batch(self, dataset_splits=['labeled_train'],
 	                   batch_size=1, randomize=True,
-	                   load_segs=True, load_contours=False,
+	                   load_segs=True, load_contours=True,
 	                   convert_onehot=False,
 	                   label_mapping=None, return_ids=False):
 
@@ -492,12 +492,11 @@ class MRIDataset(object):
 				Y_all.append(self.segs_labeled_test)
 				contours_all.append(self.contours_labeled_test)
 				files_list += self.files_labeled_test
-				
-		# files_list should actually always be the correct length
-		if not self.params['load_vols']:
-			# if the files are not already pre-loaded, then we will ahve to load one by one
-			n_files = len(files_list)
-		else:
+
+		n_files = len(files_list)
+
+		if X_all.shape[0] == n_files:  # all of the vols are loaded, so we can sample from vols instead of loading from file
+			load_from_files = False
 			# just concatenate the pre-loaded vols and sample from them
 			X_all = np.concatenate(X_all, axis=0)
 			if load_segs and len(Y_all) > 0:
@@ -507,13 +506,13 @@ class MRIDataset(object):
 
 			if load_contours and len(contours_all) > 0:
 				contours_all = np.concatenate(contours_all, axis=0)
-
-			n_files = X_all.shape[0]
-
-		if self.params['load_vols']:
-			self._print('Sampling size {} batches from {} volumes!'.format(batch_size, n_files))
 		else:
+			load_from_files = True
+
+		if load_from_files:
 			self._print('Sampling size {} batches from {} files!'.format(batch_size, n_files))
+		else:
+			self._print('Sampling size {} batches from {} volumes!'.format(batch_size, n_files))
 
 		if randomize:
 			idxs = np.random.choice(n_files, batch_size, replace=True)
@@ -526,7 +525,7 @@ class MRIDataset(object):
 			contours = [None] * batch_size
 			start = time.time()
 
-			if self.params['load_vols']:
+			if load_from_files:
 				# if vols are pre-loaded, simply sample them
 				X = X_all[idxs]
 
@@ -541,8 +540,8 @@ class MRIDataset(object):
 				batch_files = []
 				# load from files as we go
 				for i, idx in enumerate(idxs.tolist()):
-					x, y, contours = _load_vol_and_seg(files_list[idx],
-					                         load_seg=load_segs,
+					x, y, curr_contours = _load_vol_and_seg(files_list[idx],
+					                         load_seg=load_segs, load_contours=load_contours,
 					                         do_mask_vol=True,
 					                         keep_labels=self.label_mapping,
 					                         )
@@ -551,8 +550,9 @@ class MRIDataset(object):
 					
 					if load_segs:
 						Y[i] = y[np.newaxis, ...]
+
 					if load_contours:
-						contours[i] = contours
+						contours[i] = curr_contours[np.newaxis]
 
 			if self.profiler_logger is not None:
 				self.profiler_logger.info('Loading vol took {}'.format(time.time() - start))
@@ -573,11 +573,13 @@ class MRIDataset(object):
 				idxs += batch_size
 				idxs[idxs > n_files - 1] -= n_files
 
-			if convert_onehot:
+			if load_segs and convert_onehot:
 				start = time.time()
 				Y = classification_utils.labels_to_onehot(Y, label_mapping=label_mapping)
 				if self.profiler_logger is not None:
 					self.profiler_logger.info('Converting vol onehot took {}'.format(time.time() - start))
+			elif load_segs and not convert_onehot and not Y.shape[-1] == 1: # make sure we have a channels dim
+				Y = Y[..., np.newaxis]
 
 			if not return_ids:
 				yield X, Y, contours

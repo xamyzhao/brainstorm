@@ -239,6 +239,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 		# actually more like a target generator
 		self.unlabeled_gen_raw = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_train', 'unlabeled_train'], batch_size=1, 
+			load_segs=False, load_contours=False,
 			randomize=True,
 			return_ids=True,
 		)
@@ -461,7 +462,6 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self.X_tm_aug = np.concatenate(X_train_aug, axis=0)[:self.data_params['n_tm_aug']]
 			self.Y_tm_aug = np.concatenate(Y_train_aug, axis=0)[:self.data_params['n_tm_aug']]
 
-		print(self.X_labeled_train.shape)
 		self.X_labeled_train = np.concatenate([self.X_labeled_train, X_train_aug], axis=0)
 		self.segs_labeled_train = np.concatenate([self.segs_labeled_train, Y_train_aug], axis=0)
 		self.ids_labeled_train += ids_train_aug
@@ -497,13 +497,13 @@ class Segmenter(ExperimentClassBase.Experiment):
 		if use_single_atlas: # single atlas
 			# single atlas, dont bother with generator
 			self.logger.debug('Single atlas, not using source generator for augmenter')
-			source_X, source_segs, source_contours = next(source_gen)
+			source_X, source_segs, source_contours, source_ids = next(source_gen)
+		else:
+			self.logger.debug('Multiple atlases, sampling source vols from generator')
 
 		while True:
 			if not use_single_atlas:  # single atlas
-				# single atlas, dont bother with generator
-				self.logger.debug('Single atlas, not using source generator for augmenter')
-				source_X, source_segs, source_contours = next(source_gen)
+				source_X, source_segs, source_contours, source_ids = next(source_gen)
 
 
 			# keep track of which unlabeled subjects we are using in training
