@@ -263,18 +263,16 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 			# these need to be done in the generator
 			self.aug_train_gen = self._generate_augmented_batch(
-					X_to_aug=self.X_labeled_train, Y_to_aug=self.segs_labeled_train,
-					contours_to_aug=self.contours_labeled_train,
+					source_gen=self.source_gen, use_single_atlas=self.X_labeled_train.shape[0] == 1,
 					aug_by=aug_by,
-					randomize=True, convert_onehot=True, return_transforms=True,
-
+					convert_onehot=True, return_transforms=True,
 					do_slice_z=(self.n_pred_dims == 2)  # if we are predicting on slices, then get slices
 			)
 
 		# generates slices from the training volumes
 		self.train_gen = self._generate_slices_batchs_from_vols(
 			self.X_labeled_train, self.segs_labeled_train, self.ids_labeled_train,
-			vol_gen=self.source_gen,
+			vol_gen=None,
 			convert_onehot=True,
 			batch_size=self.batch_size, randomize=True
 		)
@@ -436,13 +434,14 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 		elif self.aug_tm and self.data_params['n_tm_aug'] is not None \
 				and self.data_params['n_tm_aug'] <= 100:
+
 			# TODO: this section is not well tested since it is no longer really used, we do even coupled
 			# augmentation in the generator
 			aug_name = 'tm'
 			source_train_gen_tmaug = self._generate_augmented_batch(
-				X_to_aug=self.X_labeled_train, Y_to_aug=self.segs_labeled_train,
+				self.source_gen,
 				aug_by='tm',
-				randomize=False,
+				use_single_atlas=self.X_labeled_train.shape[0] == 1
 			)
 
 			# augment and append to training set
@@ -487,16 +486,26 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 	def _generate_augmented_batch(
 			self,
-			X_to_aug=None, Y_to_aug=None, contours_to_aug=None,
-			aug_by=None, randomize=True,
+			source_gen,
+			use_single_atlas=False,
+			aug_by=None,
 			return_transforms=False,
 			convert_onehot=False,
 			do_slice_z=False,
 	):
-		# single atlas, dont bother with generator
-		self.logger.debug('Single atlas, not using source generator for augmenter')
+
+		if use_single_atlas: # single atlas
+			# single atlas, dont bother with generator
+			self.logger.debug('Single atlas, not using source generator for augmenter')
+			source_X, source_segs, source_contours = next(source_gen)
 
 		while True:
+			if not use_single_atlas:  # single atlas
+				# single atlas, dont bother with generator
+				self.logger.debug('Single atlas, not using source generator for augmenter')
+				source_X, source_segs, source_contours = next(source_gen)
+
+
 			# keep track of which unlabeled subjects we are using in training
 			ul_ids = []
 
@@ -510,7 +519,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 			color_delta = None
 			start = time.time()
 			if aug_batch_by == 'rand':
-				X_aug, flow = self.flow_rand_aug_model.predict(X_to_aug)
+				X_aug, flow = self.flow_rand_aug_model.predict(source_X)
 
 				# color augmentation by additive or multiplicative factor
 				if 'offset_amp' in self.data_params['aug_params']:
@@ -527,7 +536,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 					X_aug = np.clip(X_aug, 0., 1.)
 
 				# Y_to_aug = classification_utils.labels_to_onehot(Y_to_aug, label_mapping=self.label_mapping)
-				Y_aug = self.seg_warp_model.predict([Y_to_aug, flow])
+				Y_aug = self.seg_warp_model.predict([source_segs, flow])
 			elif aug_batch_by == 'tm':
 				if self.arch_params['do_coupled_sampling']:
 					# use the same target for flow and color
@@ -544,11 +553,11 @@ class Segmenter(ExperimentClassBase.Experiment):
 						self.profiler_logger.info('Sampling aug tgt took {}'.format(time.time() - st))
 				self.aug_target = X_flowtgt
 
-				X_colortgt_src, _ = self.flow_bck_aug_model.predict([X_colortgt, X_to_aug])
-				color_delta, colored_vol = self.color_aug_model.predict([X_to_aug, X_colortgt_src, contours_to_aug])
+				X_colortgt_src, _ = self.flow_bck_aug_model.predict([X_colortgt, source_X])
+				color_delta, colored_vol = self.color_aug_model.predict([source_X, X_colortgt_src, source_contours])
 				self.aug_colored = colored_vol
 
-				_, flow = self.flow_aug_model.predict([X_to_aug, X_flowtgt])
+				_, flow = self.flow_aug_model.predict([source_X, X_flowtgt])
 				X_aug = self.vol_warp_model.predict([colored_vol, flow])
 
 				if self.do_profile:
@@ -556,13 +565,13 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 				st = time.time()
 				# now warp the labels to match
-				Y_aug = self.seg_warp_model.predict([Y_to_aug, flow])
+				Y_aug = self.seg_warp_model.predict([source_segs, flow])
 				if self.do_profile:
 					self.profiler_logger.info('Warping labels took {}'.format(time.time() - st))
 			else:
 				# no aug
-				X_aug = X_to_aug
-				Y_aug = Y_to_aug
+				X_aug = source_X
+				Y_aug = source_segs
 
 			if self.do_profile:
 				self.profiler_logger.info('Augmenting input batch took {}'.format(time.time() - start))
@@ -570,14 +579,14 @@ class Segmenter(ExperimentClassBase.Experiment):
 			if do_slice_z:
 				# get a random slice in the z dimension
 				start = time.time()
-				n_total_slices = X_to_aug.shape[-2]
+				n_total_slices = source_X.shape[-2]
 
 				# always take random slices in the z dimension
 				slice_idxs = np.random.choice(n_total_slices, self.batch_size, replace=True)
 
 				X_to_aug_slices = np.reshape(
 					np.transpose(  # roll z-slices into batch
-						X_to_aug[:, :, :, slice_idxs],
+						source_X[:, :, :, slice_idxs],
 						(0, 3, 1, 2, 4)),
 					(-1,) + tuple(self.pred_img_shape))
 
@@ -597,7 +606,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 					# we used the onehot warper in these cases
 					Y_to_aug_slices = np.reshape(
 						np.transpose(
-							Y_to_aug[:, :, :, slice_idxs],
+							source_segs[:, :, :, slice_idxs],
 							(0, 3, 1, 2, 4)),
 						(-1,) + self.pred_segs_oh_shape)
 
@@ -605,7 +614,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 					                   (-1,) + self.pred_segs_oh_shape)
 				else:
 					Y_to_aug_slices = np.reshape(np.transpose(
-						Y_to_aug[:, :, :, slice_idxs], (0, 3, 1, 2, 4)),
+						source_segs[:, :, :, slice_idxs], (0, 3, 1, 2, 4)),
 					 (-1,) + self.pred_segs_shape)
 					Y_aug = np.reshape(np.transpose(
 						Y_aug[:, :, :, slice_idxs], (0, 3, 1, 2, 4)),
@@ -632,8 +641,8 @@ class Segmenter(ExperimentClassBase.Experiment):
 						(-1,) + self.pred_img_shape)
 			else:
 				# no slicing, no aug?
-				X_to_aug_slices = X_to_aug
-				Y_to_aug_slices = Y_to_aug
+				X_to_aug_slices = source_X
+				Y_to_aug_slices = source_segs
 
 			if convert_onehot and not ((aug_by == 'rand' or aug_by == 'tm') and self.arch_params['warpoh']):
 				# if we don't have onehot segs already, convert them after slicing
