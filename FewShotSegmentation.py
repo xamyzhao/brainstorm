@@ -230,6 +230,12 @@ class Segmenter(ExperimentClassBase.Experiment):
 	def create_generators(self, batch_size):
 		self.batch_size = batch_size
 
+		self.source_gen = self.dataset.gen_vols_batch(
+			dataset_splits=['labeled_train'], batch_size=1,
+			randomize=True,
+			return_ids=True,
+		)
+
 		# actually more like a target generator
 		self.unlabeled_gen_raw = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_train', 'unlabeled_train'], batch_size=1, 
@@ -251,7 +257,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 			# a lot of examples, so we'll just do this per-batch
 			aug_by = []
 			if self.aug_tm:
-				aug_by += ['tms']
+				aug_by += ['tm']
 			if self.aug_rand:
 				aug_by += ['flow']
 
@@ -268,7 +274,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 		# generates slices from the training volumes
 		self.train_gen = self._generate_slices_batchs_from_vols(
 			self.X_labeled_train, self.segs_labeled_train, self.ids_labeled_train,
-			vol_gen=None,
+			vol_gen=self.source_gen,
 			convert_onehot=True,
 			batch_size=self.batch_size, randomize=True
 		)
@@ -494,7 +500,6 @@ class Segmenter(ExperimentClassBase.Experiment):
 			# keep track of which unlabeled subjects we are using in training
 			ul_ids = []
 
-
 			if len(aug_by) > 1:
 				# multiple augmentation schemes. let's flip a coin
 				do_aug_by_idx = np.random.rand(1)[0] * float(len(aug_by) - 1)
@@ -526,18 +531,12 @@ class Segmenter(ExperimentClassBase.Experiment):
 			elif aug_batch_by == 'tm':
 				if self.arch_params['do_coupled_sampling']:
 					# use the same target for flow and color
-					X_flowtgt, _, ul_flow_ids = next(self.unlabeled_gen_raw)
+					X_flowtgt, _, _, ul_flow_ids = next(self.unlabeled_gen_raw)
 					X_colortgt = X_flowtgt
 					ul_ids += ul_flow_ids
 				else:
-					if 'sample_transforms_from_data_params' in self.data_params.keys():
-						# GLT should be trained with the same source image
-						# show debug in the first iteration
-						X_flowtgt, _, ul_flow_ids = next(self.unlabeled_gen_raw)
-						X_colortgt, _, ul_color_ids = next(self.unlabeled_gen_raw)
-					else:
-						X_flowtgt, _, ul_flow_ids = next(self.unlabeled_gen_raw)
-						X_colortgt, _, ul_color_ids = next(self.unlabeled_gen_raw)
+					X_flowtgt, _, _, ul_flow_ids = next(self.unlabeled_gen_raw)
+					X_colortgt, _, _, ul_color_ids = next(self.unlabeled_gen_raw)
 					ul_ids += ul_flow_ids + ul_color_ids
 
 

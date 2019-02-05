@@ -580,7 +580,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		if self.X_source_train.shape[0] == 1:
 			# single atlas, no need to sample from generator
 			X_source = self.X_source_train
-			segs_source = self.Y_source_train
+			segs_source = self.segs_source_train
 			contours_source = self.contours_source_train
 			id_source = [self.source_train_files[0]]
 

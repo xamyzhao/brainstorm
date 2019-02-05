@@ -276,9 +276,10 @@ if __name__ == '__main__':
 					'save_every': 10,
 					'test_every': 5,
 					'flow_bck_model': ('experiments/'
-						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
-						'/models/vm2_cc_bck_epoch500_iter50000.h5'),
-					'transform_reg_color': 'grad-seg-l2', 'transform_reg_lambda_color': 0.02,
+						'voxelmorph/vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'),
+						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1131_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
+						#'/models/vm2_cc_bck_epoch500_iter50000.h5'),
+					'transform_reg_color': 'grad-seg-l2', 'transform_reg_lambda_color': 0,#0.02,
 					'color_transform_in_tgt_space': False,
 					'recon_loss_I': 'l2-src',
 					'recon_loss_wt': 1,
@@ -342,14 +343,18 @@ if __name__ == '__main__':
 					'tm_flow_model': (
 						'experiments/'
 						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
+						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
 						'/models/vm2_cc_fwd_epoch500_iter50000.h5'),
 					'tm_flow_bck_model': (
 						'experiments/'
 						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
+						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
 						'/models/vm2_cc_bck_epoch500_iter50000.h5'),
 					'tm_color_model': (
 						'experiments/'
-						'VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_color_unet_invflow-VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1_c-srcsp_incontours_grad-si-l2_regcwt1_l2-src_sigI0.1/models/color_delta_unet_srcspace_epoch20_iter2000.h5'),
+						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
+						#'VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_color_unet_invflow-VM_mri-tr-vm-valid-vm-unm_100ul_subj-990104_vc700-l-to-subjs_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1_c-srcsp_incontours_grad-si-l2_regcwt1_l2-src_sigI0.1/models/color_delta_unet_srcspace_epoch20_iter2000.h5'),
+						'/models/color_delta_unet_epoch10_iter1000.h5'),
 				},
 			}
 
