@@ -6,8 +6,9 @@ import time
 
 import cv2
 import json
-from keras.optimizers import Adam
 import keras.metrics as keras_metrics
+from keras.models import Model
+from keras.optimizers import Adam
 import numpy as np
 
 import mri_loader
@@ -142,7 +143,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 		self.aug_randmult = False # random multiplicative intensity
 
 
-		if 'aug_flow' in data_params.keys() and data_params['aug_flow']:
+		if 'aug_rand' in data_params.keys() and data_params['aug_rand']:
 			self.aug_rand = True
 			if 'n_flow_aug' in data_params.keys() and data_params['n_flow_aug'] is not None:
 				self.n_aug = data_params['n_flow_aug']
@@ -165,7 +166,10 @@ class Segmenter(ExperimentClassBase.Experiment):
 		# come up with a name for our flow and color models so we can put them in this model name
 		if self.arch_params['tm_flow_model'] is not None and self.arch_params['tm_color_model'] is not None \
 				and self.aug_tm:
-			flow_epoch = re.search('(?<=_epoch)[0-9]*', self.arch_params['tm_flow_model']).group(0)
+			if 'epoch' in self.arch_params['tm_flow_model']:
+				flow_epoch = re.search('(?<=_epoch)[0-9]*', self.arch_params['tm_flow_model']).group(0)
+			else:
+				flow_epoch = int(int(re.search('(?<=_iter)[0-9]*', self.arch_params['tm_flow_model']).group(0)) / 100)
 			color_epoch = re.search('(?<=_epoch)[0-9]*', self.arch_params['tm_color_model']).group(0)
 
 			# only include the color model in the name if we are doing both flow and color aug
@@ -251,6 +255,8 @@ class Segmenter(ExperimentClassBase.Experiment):
 		# generator for labeled training examples that we wish to augment
 		self.source_gen = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_train'], batch_size=1,
+			load_segs=True, # always load segmentations since this is our labeled set
+			load_contours=self.aug_tm, # only load contours if we need them as aux data for our appearance model
 			randomize=True,
 			return_ids=True,
 		)
@@ -272,14 +278,14 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self._create_augmented_examples()
 			self.logger.debug('Augmented classifier training set: vols {}, segs {}'.format(
 				self.X_labeled_train.shape, self.segs_labeled_train.shape))
-		elif self.aug_tm or self.aug_rand:
+		elif self.aug_tm or self.aug_rand or self.aug_tmf or self.aug_randmult:
 			# augmentation by transform model or random flow+intensity requires synthesizing
 			# a lot of examples, so we'll just do this per-batch
 			aug_by = []
 			if self.aug_tm:
 				aug_by += ['tm']
 			if self.aug_rand:
-				aug_by += ['flow']
+				aug_by += ['rand']
 
 			if self.aug_tmf and self.aug_randmult:
 				aug_by += ['tmf-randmult']
@@ -307,6 +313,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 			['labeled_valid'],
 			batch_size=1, randomize=False,
 			convert_onehot=False,
+			load_segs=True,
 			label_mapping=self.label_mapping,
 			return_ids=True,
 		)
@@ -407,7 +414,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 			self.flow_rand_aug_model.summary(print_fn=self.logger.debug)
 
-		if self.aug_tm or self.aug_sas:
+		if self.aug_tm or self.aug_sas or self.aug_tmf:
 			from keras.models import load_model
 			self.flow_aug_model = load_model(
 				self.arch_params['tm_flow_model'],
@@ -425,7 +432,25 @@ class Segmenter(ExperimentClassBase.Experiment):
 							nrn_layers.SpatialTransformer,
 							indexing=indexing)
 					}, compile=False)
-				self.color_aug_model = load_model(self.arch_params['tm_color_model'], compile=False)
+				self.color_aug_model = load_model(
+					self.arch_params['tm_color_model'], 
+					custom_objects={
+						'SpatialTransformer': functools.partial(
+							nrn_layers.SpatialTransformer,
+							indexing=indexing)
+					}, compile=False)
+
+				if 'l2-tgt' in self.arch_params['tm_color_model']:
+					# if the color model transforms to the target space by default, create
+					# a wrapper that gets the source space
+					self.color_aug_model = Model(
+						inputs=self.color_aug_model.inputs[:-1],
+						outputs=[
+							self.color_aug_model.outputs[0], 
+							self.color_aug_model.get_layer('add_color_delta').output,
+							self.color_aug_model.outputs[2]], 
+						name='color_model_wrapper')
+
 
 
 	def _create_augmented_examples(self):
@@ -439,14 +464,14 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 			unlabeled_labeler_gen = self.dataset.gen_vols_batch(
 				dataset_splits=['unlabeled_train'],
-				batch_size=1, randomize=False)
+				batch_size=1, randomize=False, return_ids=True)
 
 			X_train_aug = np.zeros((self.n_aug,) + self.aug_img_shape)
 			Y_train_aug = np.zeros((self.n_aug,) + self.aug_img_shape[:-1] + (1,))
-			ids_train_aug = ['sas_aug_{}'.format(i) for i in range(self.n_aug)]
+			ids_train_aug = []#['sas_aug_{}'.format(i) for i in range(self.n_aug)]
 			for i in range(self.n_aug):
 				self.logger.debug('Pseudo-labeling UL example {} of {} using SAS!'.format(i, self.n_aug))
-				unlabeled_X, _ = next(unlabeled_labeler_gen)
+				unlabeled_X, _, _, ul_ids = next(unlabeled_labeler_gen)
 
 				# warp labeled example to unlabeled example
 				X_aug, flow = self.flow_aug_model.predict([source_X, unlabeled_X])
@@ -455,7 +480,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 				X_train_aug[i] = unlabeled_X
 				Y_train_aug[i] = Y_aug
-
+				ids_train_aug += ['sas_{}'.format(ul_id) for ul_id in ul_ids]
 
 		elif self.aug_tm and self.data_params['n_tm_aug'] is not None \
 				and self.data_params['n_tm_aug'] <= 100:
@@ -600,13 +625,14 @@ class Segmenter(ExperimentClassBase.Experiment):
 					X_colortgt, _, _, ul_color_ids = next(self.unlabeled_gen_raw)
 					ul_ids += ul_flow_ids + ul_color_ids
 
-
 					if self.do_profile:
 						self.profiler_logger.info('Sampling aug tgt took {}'.format(time.time() - st))
+
 				self.aug_target = X_flowtgt
 
+				#if 'l2-tgt' in self.arch_params['tm_color_model']:
 				X_colortgt_src, _ = self.flow_bck_aug_model.predict([X_colortgt, source_X])
-				color_delta, colored_vol = self.color_aug_model.predict([source_X, X_colortgt_src, source_contours])
+				color_delta, colored_vol, _ = self.color_aug_model.predict([source_X, X_colortgt_src, source_contours])
 				self.aug_colored = colored_vol
 
 				_, flow = self.flow_aug_model.predict([source_X, X_flowtgt])
@@ -651,8 +677,11 @@ class Segmenter(ExperimentClassBase.Experiment):
 				if self.aug_target is not None:
 					self.aug_target = np.reshape(
 						np.transpose(self.aug_target[..., slice_idxs, :], (0, 3, 1, 2, 4)), (-1,) + self.pred_img_shape)
-					self.aug_colored = np.reshape(
-						np.transpose(self.aug_colored[..., slice_idxs, :], (0, 3, 1, 2, 4)), (-1,) + self.pred_img_shape)
+
+					if self.aug_colored is not None:
+						# not relevant if we arent using a color transform model
+						self.aug_colored = np.reshape(
+							np.transpose(self.aug_colored[..., slice_idxs, :], (0, 3, 1, 2, 4)), (-1,) + self.pred_img_shape)
 
 				if (aug_by == 'rand' or aug_by == 'tm') and self.arch_params['warpoh']:
 					# we used the onehot warper in these cases
@@ -831,6 +860,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 		if display_batch_size < batch_size:
 			input_im_batches = [batch[:display_batch_size] for batch in input_im_batches]
+			overlay_on_ims = [im[:display_batch_size] if im is not None else None for im in overlay_on_ims]
 
 		show_label_idx = 12 # cerebral wm
 		out_im = np.concatenate([
@@ -921,7 +951,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 		valid_losses = []
 
 		# just validate on a smaller set during training so it doesnt take too long
-		n_test_examples = 25 # len(self.dataset.files_labeled_valid)
+		n_test_examples = len(self.dataset.files_labeled_valid)
 		cces, dice, accs = self._eval_from_gen(self.eval_valid_gen, n_test_examples)
 
 		valid_losses += [np.mean(cces), np.mean(dice[:, 1:]), np.mean(accs)]

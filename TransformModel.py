@@ -47,13 +47,13 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 					exp_name += '-wt{}'.format(self.cc_loss_weight)
 
 		elif 'color' in self.arch_params['model_arch']:
-			if self.arch_params['input_aux_labels'] is not None:
-				if 'segs_oh' in self.arch_params['input_aux_labels']:
+			if self.arch_params['do_aux_reg'] is not None:
+				if 'segs_oh' in self.arch_params['do_aux_reg']:
 					exp_name += '_insegsoh'
-				elif 'segs' in self.arch_params['input_aux_labels']:
+				elif 'segs' in self.arch_params['do_aux_reg']:
 					exp_name += '_insegs'
 
-				if 'contours' in self.arch_params['input_aux_labels']:
+				if 'contours' in self.arch_params['do_aux_reg'] and self.arch_params['include_aux_input']:
 					exp_name += '_incontours'
 
 			# color smoothness and reconstruction losses
@@ -92,8 +92,8 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		# initialize our dataset
 		self.dataset = mri_loader.MRIDataset(self.data_params, self.logger)
 
-		if 'input_aux_labels' not in arch_params.keys():
-			self.arch_params['input_aux_labels'] = None
+		if 'do_aux_reg' not in arch_params.keys():
+			self.arch_params['do_aux_reg'] = None
 
 		# enc/dec architecture
 		# parse params for flow portion of network
@@ -184,14 +184,16 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		else:
 			self.latest_epoch = 0
 
+		'''
 		self.get_model_name()
 
 		self.model_name, \
 		self.exp_dir, \
 		self.figures_dir, self.logs_dir, self.models_dir \
 			= file_utils.make_output_dirs(self.model_name, exp_root='./{}/'.format(exp_root))
-
-		super(TransformModelTrainer, self).__init__(data_params=self.data_params, arch_params=self.arch_params)
+		'''
+		super(TransformModelTrainer, self).__init__(
+			data_params=self.data_params, arch_params=self.arch_params, prompt_delete=True, prompt_rename=True)
 
 	def get_dirs(self):
 		return self.exp_dir, self.figures_dir, self.logs_dir, self.models_dir
@@ -215,7 +217,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				self.transform_reg_fn = my_metrics.SpatialSegmentSmoothness(
 					n_dims=self.n_dims,
 					n_chans=self.n_chans,
-					warped_contours_layer_output=self.transform_model.get_layer('input_src_aux').output
+					warped_contours_layer_output=self.transform_model.get_layer('aux').output
 				).compute_loss
 			elif 'grad-si-l2' in self.transform_reg_name:  # do this here since we need to point to the model
 				self.transform_reg_fn = my_metrics.SpatialIntensitySmoothness(
@@ -240,9 +242,10 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			loss_weights = [self.recon_loss_wt, self.transform_reg_wt]
 			self.loss_names = [self.recon_loss_name, self.transform_reg_name]
 		else:
-			loss_fns = [self.transform_reg_fn, self.recon_loss_fn]
-			loss_weights = [self.transform_reg_wt, self.recon_loss_wt]
-			self.loss_names = [self.transform_reg_name, self.recon_loss_name]
+			# dummy loss at the end for aux inputs so that we can do regularization
+			loss_fns = [self.transform_reg_fn, self.recon_loss_fn, keras_metrics.mean_squared_error]
+			loss_weights = [self.transform_reg_wt, self.recon_loss_wt, 0.]
+			self.loss_names = [self.transform_reg_name, self.recon_loss_name, 'dummy_aux']
 
 
 		self.logger.debug('Transform model')
@@ -292,12 +295,18 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			load_source_segs=False)
 
 
-		if 'color' in self.arch_params['model_arch'] \
-				and not self.arch_params['color_transform_in_tgt_space'] \
-				and 'src' in self.recon_loss_name:  # we are computing color recon loss in src space
-			# warp all target volumes back to source space
+		if 'color' in self.arch_params['model_arch']:
 
 			from keras.models import load_model
+			self.flow_fwd_model = load_model(
+				self.arch_params['flow_fwd_model'],
+				custom_objects={
+					'SpatialTransformer': functools.partial(
+						nrn_layers.SpatialTransformer,
+						indexing='xy')
+				},
+				compile=False
+			)
 			self.flow_bck_model = load_model(
 				self.arch_params['flow_bck_model'],
 				custom_objects={
@@ -308,9 +317,9 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				compile=False
 			)
 
-			if self.X_source_train.shape[0] == 1: # NOTE: we can only do this for single atlas
-				# back-warp all target vols to the source space
-				# we shouldn't have to deal with aux inputs since those should be in the input space already
+			if self.X_source_train.shape[0] == 1 and self.recon_loss_name == 'l2-src':
+				# back-warp all target vols to the source space. We can only do this for single atlas, and only
+				# if we want to compute the reconstruction loss in the src space
 				for i in range(self.X_target_train.shape[0]):
 					if i % 10 == 0:
 						self.logger.debug('Back-warping target example {} of {}'.format(
@@ -477,21 +486,21 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
 
 	def _create_color_model(self):
-		if self.arch_params['input_aux_labels'] is None:
+		if self.arch_params['do_aux_reg'] is None:
 			# no auxiliary input (e.g. contours, segmentations)
 			self.aux_input_shape = None
 		else:
-			if 'segs_oh' in self.arch_params['input_aux_labels']:
+			if 'segs_oh' in self.arch_params['do_aux_reg']:
 				self.aux_input_shape = tuple(self.segs_source_train.shape[1:-1]) + (self.n_labels,)
-			elif 'segs' in self.arch_params['input_aux_labels']:
+			elif 'segs' in self.arch_params['do_aux_reg']:
 				self.aux_input_shape = self.segs_source_train.shape[1:]
 			else:
 				self.aux_input_shape = None
 
 			# if contours are also included, add then in a stack. otherwise, it is the only aux input
-			if 'contours' in self.arch_params['input_aux_labels'] and self.aux_input_shape is not None:
+			if 'contours' in self.arch_params['do_aux_reg'] and self.aux_input_shape is not None:
 				self.aux_input_shape = self.aux_input_shape[:-1] + (self.aux_input_shape[-1] + 1,)
-			elif 'contours' in self.arch_params['input_aux_labels'] and self.aux_input_shape is None:
+			elif 'contours' in self.arch_params['do_aux_reg'] and self.aux_input_shape is None:
 				self.aux_input_shape = self.contours_source_train.shape[1:]
 
 		self.logger.debug('Auxiliary input shape: {}'.format(self.aux_input_shape))
@@ -505,15 +514,16 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 				img_shape=self.img_shape,
 				n_output_chans=self.n_chans,
 				enc_params={
-					'nf_enc': [16, 32, 32, 32],
-					'nf_dec': [32, 32, 32, 32, 32, 16, 16],
+					'nf_enc': [16, 32, 32, 32, 32, 32],
+					'nf_dec': [64, 64, 32, 32, 32, 16, 16],
 					'use_maxpool': True,
 					'use_residuals': False,
 					'n_convs_per_stage': 1,	
 				},
 				model_name=color_model_name,
-				include_aux_input=self.arch_params['input_aux_labels'] is not None,
+				include_aux_input=self.arch_params['do_aux_reg'] is not None and self.arch_params['include_aux_input'],
 				aux_input_shape=self.aux_input_shape,
+				do_warp_to_target_space='tgt' in self.recon_loss_name,
 			)
 			self.models += [self.transform_model]
 
@@ -543,21 +553,25 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 		source_vol_gen = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_train'],
 			batch_size=batch_size, 
-			load_segs=self.arch_params['input_aux_labels'] is not None and 'segs' in self.arch_params['input_aux_labels'], 
-			load_contours=self.arch_params['input_aux_labels'] is not None and 'contours' in self.arch_params['input_aux_labels'],
+			load_segs=self.arch_params['do_aux_reg'] is not None and 'segs' in self.arch_params['do_aux_reg'], 
+			load_contours=self.arch_params['do_aux_reg'] is not None and 'contours' in self.arch_params['do_aux_reg'],
 			randomize=True,
 			return_ids=True,
 		)
 
 		target_train_vol_gen = self.dataset.gen_vols_batch(
 			dataset_splits=['unlabeled_train', 'labeled_train'],
-			batch_size=batch_size, load_segs=False, randomize=True,
+			batch_size=batch_size, 
+			load_segs=False, load_contours=False, 
+			randomize=True,
 			return_ids=True
 		)
 
 		target_valid_vol_gen = self.dataset.gen_vols_batch(
 			dataset_splits=['labeled_valid'],
-			batch_size=batch_size, load_segs=False, randomize=True,
+			batch_size=batch_size, 
+			load_segs=False, load_contours=False, 
+			randomize=True,
 			return_ids=True
 		)
 
@@ -585,59 +599,68 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			id_source = [self.source_train_files[0]]
 
 			# create source aux input here in case we need it later
-			if self.arch_params['input_aux_labels'] is not None:
-				if 'segs_oh' in self.arch_params['input_aux_labels']:
+			if self.arch_params['do_aux_reg'] is not None:
+				if 'segs_oh' in self.arch_params['do_aux_reg']:
 					# first channel will be segs in label form
 					Y_source_onehot = classification_utils.labels_to_onehot(
 						self.segs_source_train[..., [0]], label_mapping=self.label_mapping)
 					source_aux_inputs = Y_source_onehot
-				elif 'segs' in self.arch_params['input_aux_labels']:
+				elif 'segs' in self.arch_params['do_aux_reg']:
 					source_aux_inputs = self.segs_source_train
 				else:
 					source_aux_inputs = None
 
-				if 'contours' in self.arch_params['input_aux_labels'] and source_aux_inputs is not None:
+				if 'contours' in self.arch_params['do_aux_reg'] and source_aux_inputs is not None:
 					source_aux_inputs = np.concatenate([source_aux_inputs, self.contours_source_train], axis=-1)
-				elif 'contours' in self.arch_params['input_aux_labels'] and source_aux_inputs is None:
+				elif 'contours' in self.arch_params['do_aux_reg'] and source_aux_inputs is None:
 					source_aux_inputs = self.contours_source_train
 
 		while True:
 			if self.X_source_train.shape[0] > 1:
 				X_source, segs_source, contours_source, id_source = next(source_vol_gen)
 				# create source aux input here in case we need it later
-				if self.arch_params['input_aux_labels'] is not None:
-					if 'segs_oh' in self.arch_params['input_aux_labels']:
+				if self.arch_params['do_aux_reg'] is not None:
+					if 'segs_oh' in self.arch_params['do_aux_reg']:
 						# first channel will be segs in label form
 						Y_source_onehot = classification_utils.labels_to_onehot(
 							segs_source[..., [0]], label_mapping=self.label_mapping)
 						source_aux_inputs = Y_source_onehot
-					elif 'segs' in self.arch_params['input_aux_labels']:
+					elif 'segs' in self.arch_params['do_aux_reg']:
 						source_aux_inputs = segs_source
 					else:
 						source_aux_inputs = None
 
-					if 'contours' in self.arch_params['input_aux_labels'] and source_aux_inputs is not None:
+					if 'contours' in self.arch_params['do_aux_reg'] and source_aux_inputs is not None:
 						source_aux_inputs = np.concatenate([source_aux_inputs, contours_source], axis=-1)
-					elif 'contours' in self.arch_params['input_aux_labels'] and source_aux_inputs is None:
+					elif 'contours' in self.arch_params['do_aux_reg'] and source_aux_inputs is None:
 						source_aux_inputs = contours_source
 
 
 			X_target, _, _, id_target = next(target_vol_gen)
-			if 'color' in self.arch_params['model_arch'] and self.X_source_train.shape[0] > 1: # more than one atlas, so we need to back-warp depending on our atlas
-				X_target = self.flow_bck_model.predict([
-					X_target, X_source])[0]
+			if 'color' in self.arch_params['model_arch']:
+				if self.X_source_train.shape[0] > 1 and self.recon_loss_name == 'l2-src' \
+						or self.recon_loss_name == 'l2-tgt': 
+					# more than one atlas, so we need to back-warp depending on our atlas
+					# OR, if we are computing reconstruction loss in the target space,
+					# we still need to give the color model the src-space target
+					X_target_srcspace = self.flow_bck_model.predict([X_target, X_source])[0]
 
 
-			if self.arch_params['input_aux_labels'] is not None:
-				inputs = [X_source, X_target, source_aux_inputs]
+			if self.arch_params['do_aux_reg'] is not None:
+				inputs = [X_source, X_target_srcspace, source_aux_inputs]
 			else:
-				inputs = [X_source, X_target]
+				inputs = [X_source, X_target_srcspace]
+
+			if self.recon_loss_name == 'l2-tgt':
+				_, flow_batch = self.flow_fwd_model.predict([X_source, X_target])
+				# reconstruction loss in the target space				
+				inputs += [flow_batch]
 
 			if 'bidir' in self.arch_params['model_arch']:
 				# forward target, backward target, forward flow reg, backward flow reg
 				targets = [X_target, X_source, X_target, X_source]
 			else:
-				targets = [X_target] * 2
+				targets = [X_target] * 3 # one dummy input at the end for the aux labels
 
 			if not return_ids:
 				yield inputs, targets
@@ -717,14 +740,14 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 			[os.path.basename(idt) for idt in ids_target]]
 		do_normalize = [False, False]
 
-		if self.arch_params['input_aux_labels'] is not None \
-				and 'segs_oh' in self.arch_params['input_aux_labels']:
+		if self.arch_params['do_aux_reg'] is not None \
+				and 'segs_oh' in self.arch_params['do_aux_reg']:
 			# last input will be aux info. if it is segmentations, just visualize one label
 			input_im_batches += [inputs[-1][..., 16]]
 			labels += ['aux_oh']
 			do_normalize += [True]
-		elif self.arch_params['input_aux_labels'] is not None and 'contours' in self.arch_params['input_aux_labels']:
-			input_im_batches += [inputs[-1][..., [-1]]]
+		elif self.arch_params['do_aux_reg'] is not None and 'contours' in self.arch_params['do_aux_reg']:
+			input_im_batches += [inputs[2][..., [-1]]]
 			labels += ['aux_contours']
 			do_normalize += [True]
 

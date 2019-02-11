@@ -29,21 +29,29 @@ def color_delta_unet_model(img_shape,
 						   model_name='color_delta_unet',
 						   enc_params=None,
 						   include_aux_input=False,
-						   aux_input_shape=None
+						   aux_input_shape=None,
+						   do_warp_to_target_space=False
 						   ):
 	x_src = Input(img_shape, name='input_src')
 	x_tgt = Input(img_shape, name='input_tgt')
+	if aux_input_shape is None:
+		aux_input_shape = img_shape
+
+	x_seg = Input(aux_input_shape, name='input_src_aux')
+	inputs = [x_src, x_tgt, x_seg]
+
+	if do_warp_to_target_space: # warp transformed vol to target space in the end
+		n_dims = len(img_shape) - 1
+		flow_srctotgt = Input(img_shape[:-1] + (n_dims,), name='input_flow')
+		inputs += [flow_srctotgt]
 
 	if include_aux_input:
-		if aux_input_shape is None:
-			aux_input_shape = img_shape
-		x_seg = Input(aux_input_shape, name='input_src_aux')
-		inputs = [x_src, x_tgt, x_seg]
+		unet_inputs = [x_src, x_tgt, x_seg]
 		unet_input_shape = img_shape[:-1] + (img_shape[-1] * 2 + aux_input_shape[-1],)
 	else:
-		inputs = [x_src, x_tgt]
+		unet_inputs = [x_src, x_tgt]
 		unet_input_shape = img_shape[:-1] + (img_shape[-1] * 2,)
-	x_stacked = Concatenate(axis=-1)(inputs)
+	x_stacked = Concatenate(axis=-1)(unet_inputs)
 
 	n_dims = len(img_shape) - 1
 
@@ -63,10 +71,16 @@ def color_delta_unet_model(img_shape,
 		conv_fn = Conv3D
 
 	# last conv to get the output shape that we want
-	color_delta = conv_fn(n_output_chans, kernel_size=3, padding='same')(color_delta)
+	color_delta = conv_fn(n_output_chans, kernel_size=3, padding='same', name='color_delta')(color_delta)
 
 	transformed_out = Add(name='add_color_delta')([x_src, color_delta])
-	return Model(inputs=inputs, outputs=[color_delta, transformed_out], name=model_name)
+	if do_warp_to_target_space:
+		transformed_out = SpatialTransformer(indexing='xy')([transformed_out, flow_srctotgt])
+
+	# kind of silly, but do a reshape so keras doesnt complain about returning an input
+	x_seg = Reshape(aux_input_shape, name='aux')(x_seg)
+
+	return Model(inputs=inputs, outputs=[color_delta, transformed_out, x_seg], name=model_name)
 
 ##############################################################################
 # Model for warping volumes/segmentations on the GPU

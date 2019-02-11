@@ -33,6 +33,25 @@ voxelmorph_labels = [0,
 
 
 named_data_params = {
+	'adni-100-csts2-sup': {  # supervised experiment
+		'dataset_name': 'adni',
+		'source_name': 'centroidsubj2',
+		'target_name': 'subjs',
+		'use_labels': voxelmorph_labels,
+		'use_atlas_as_source': False,
+		'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
+		'img_shape': (160, 192, 224, 1),
+		'pred_img_shape': (160, 192, 1),
+		'aug_img_shape': (160, 192, 224, 1),
+		'n_shot': 100,  # in addition to source subjects above
+		'n_unlabeled': 0,
+		'n_validation': 50,
+		'load_vols': True,
+		'aug_in_gen': True,
+		'n_tm_aug': None,
+		'n_flow_aug': None,
+		'warp_labels': True,
+	},
 	'adni-100-csts2': {
 		'dataset_name': 'adni',
 		'source_name': 'centroidsubj2',
@@ -40,6 +59,7 @@ named_data_params = {
 		'use_labels': voxelmorph_labels,
 		'use_atlas_as_source': False,
 		'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
+		'exclude_from_validation_list': 'cvpr_test_files.txt',
 		'img_shape': (160, 192, 224, 1),
 		'pred_img_shape': (160, 192, 1),
 		'aug_img_shape': (160, 192, 224, 1),
@@ -58,7 +78,9 @@ named_data_params = {
 		'use_labels': voxelmorph_labels,
 		'final_test': True,
 		'n_unlabeled': 1,
-		'n_validation': 100,
+		'n_validation': 1,
+		'n_test': 200,
+		'test_seed': 17,
 		'use_atlas_as_source': False,
 		'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
 		'img_shape': (160, 192, 224, 1),
@@ -174,7 +196,7 @@ if __name__ == '__main__':
 	# common params
 	ap.add_argument('exp_type', nargs='*', type=str, help='trans (transform model), fss (few-shot segmentation)')
 	ap.add_argument('--gpu', nargs='*', type=int, help='gpu id(s) to use', default=1)
-	ap.add_argument('--batch_size', nargs='?', type=int, default=16)
+	ap.add_argument('--batch_size', nargs='?', type=int, default=64)
 	ap.add_argument('--data', nargs='?', type=str, help='name of dataset', default=None)
 
 	ap.add_argument('--model', type=str, help='model architecture', default=None)
@@ -183,7 +205,7 @@ if __name__ == '__main__':
 	ap.add_argument('--print_every', nargs='?', type=int,
 					help='Number of seconds between printing training batches as images', default=120)
 
-	ap.add_argument('--lr', nargs='?', type=float, help='Learning rate', default=5e-4)
+	ap.add_argument('--lr', nargs='?', type=float, help='Learning rate', default=1e-4)
 	ap.add_argument('--debug', action='store_true', help='Load fewer and save more often', default=False)
 	ap.add_argument('--loadn', type=int, help='Load fewer and save more often', default=None)
 
@@ -277,18 +299,21 @@ if __name__ == '__main__':
 				},
 				'color-unet': {
 					'model_arch': 'color_unet',
-					'save_every': 10,
+					'save_every': 5,
 					'test_every': 5,
+					'flow_fwd_model': ('experiments/' # only used if we are computing recon loss in tgt space
+						'voxelmorph/vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'),
 					'flow_bck_model': ('experiments/'
 						'voxelmorph/vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'),
-						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1131_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
+						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
 						#'/models/vm2_cc_bck_epoch500_iter50000.h5'),
-					'transform_reg_color': 'grad-seg-l2', 'transform_reg_lambda_color': 0,#0.02,
+					'transform_reg_color': 'grad-seg-l2', 'transform_reg_lambda_color': 1,
 					'color_transform_in_tgt_space': False,
-					'recon_loss_I': 'l2-src',
-					'recon_loss_wt': 1,
+					'include_aux_input': False, # we did not acutally give this info to the model in cvpr
+					'recon_loss_I': 'l2-tgt',
+					'recon_loss_wt': 50,
 					'end_epoch': 20,
-					'input_aux_labels': 'contours',
+					'do_aux_reg': 'contours',
 				},
 			}
 
@@ -341,6 +366,50 @@ if __name__ == '__main__':
 					'n_convs_per_stage': 2,
 					'use_maxpool': True,
 					'use_residuals': False,
+					'end_epoch': 100000,
+					'pretrain_l2': 500,
+					'warpoh': False,
+					'tm_flow_model': (
+						'experiments/voxelmorph/'
+						'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
+					),
+					'tm_flow_bck_model': (
+						'experiments/voxelmorph/'
+						'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
+					),
+					'tm_color_model': (
+						'experiments/'
+						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt1_l2-src-wt50'
+						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_grad-seg-l2_regcwt1_l2-src-wt50'
+					'/models/color_delta_unet_epoch10_iter1000.h5'),
+				},
+				'tgtrecon': {
+					'nf_enc': [32, 32, 64, 64, 128, 128],
+					'n_convs_per_stage': 2,
+					'use_maxpool': True,
+					'use_residuals': False,
+					'end_epoch': 100000,
+					'pretrain_l2': 500,
+					'warpoh': False,
+					'tm_flow_model': (
+						'experiments/voxelmorph/'
+						'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
+					),
+					'tm_flow_bck_model': (
+						'experiments/voxelmorph/'
+						'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
+					),
+					'tm_color_model': (
+						'experiments/'
+						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt1_l2-src-wt50'
+						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_grad-seg-l2_regcwt1_l2-tgt-wt50_1'
+					'/models/color_delta_unet_epoch10_iter1000.h5'),
+				},
+				'incontours': {
+					'nf_enc': [32, 32, 64, 64, 128, 128],
+					'n_convs_per_stage': 2,
+					'use_maxpool': True,
+					'use_residuals': False,
 					'end_epoch': 10000,
 					'pretrain_l2': 500,
 					'warpoh': False,
@@ -354,7 +423,29 @@ if __name__ == '__main__':
 					),
 					'tm_color_model': (
 						'experiments/'
-						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
+#						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
+						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt1_l2-src-wt50'
+					'/models/color_delta_unet_epoch10_iter1000.h5'),
+				},
+				'noreg': {
+					'nf_enc': [32, 32, 64, 64, 128, 128],
+					'n_convs_per_stage': 2,
+					'use_maxpool': True,
+					'use_residuals': False,
+					'end_epoch': 10000,
+					'pretrain_l2': 500,
+					'warpoh': False,
+					'tm_flow_model': (
+						'experiments/voxelmorph/'
+						'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
+					),
+					'tm_flow_bck_model': (
+						'experiments/voxelmorph/'
+						'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
+					),
+					'tm_color_model': (
+						'experiments/'
+						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_grad-seg-l2_regcwt0_l2-src-wt50'
 						'/models/color_delta_unet_epoch10_iter1000.h5'),
 				},
 				'2atlas': {
@@ -375,7 +466,8 @@ if __name__ == '__main__':
 						'/models/vm2_cc_bck_epoch500_iter50000.h5'),
 					'tm_color_model': (
 						'experiments/'
-						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
+						'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_color_unet_grad-seg-l2_regcwt1_l2-src-wt50'
+						#'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
 						'/models/color_delta_unet_epoch10_iter1000.h5'),
 				},
 
@@ -429,6 +521,12 @@ if __name__ == '__main__':
 				with open(os.path.join(args.from_dir, 'data_params.json'), 'r') as f:
 					data_params = json.load(f)
 
+			data_params['aug_tm'] = False
+			data_params['aug_tmf'] = False
+			data_params['aug_rand'] = False
+			data_params['aug_sas'] = False
+			data_params['aug_randmult'] = False
+
 			if args.aug_rand or args.aug_tmfrm:
 				data_params['load_vols'] = False
 				for k, v in flow_aug_params[args.data].items():
@@ -443,28 +541,22 @@ if __name__ == '__main__':
 
 			if args.aug_tm:
 				data_params['aug_tm'] = True
-				data_params['aug_sas'] = False
 				data_params['load_vols'] = False
-			elif args.aug_tmfrm:
+			elif args.aug_tmf or args.aug_tmfrm: # only load the flow transform model, not appearance
 				data_params['aug_tmf'] = True
-				data_params['aug_sas'] = False
 				data_params['load_vols'] = False
 
 			elif args.aug_sas:
 				data_params['load_vols'] = False
 				data_params['aug_sas'] = True
-				data_params['aug_tm'] = False
 				data_params['n_sas_aug'] = data_params['n_unlabeled']
 				data_params['aug_in_gen'] = False
-			else:
-				data_params['aug_tm'] = False
-				data_params['aug_sas'] = False
 
 			if args.aug_tm or args.aug_sas or args.aug_rand or args.aug_tmfrm:
-				test_every_n_epochs = 100
+				test_every_n_epochs = 200
 			else:
 				# test no-aug less often because it will be pretty bad and will plateau quickly
-				test_every_n_epochs = 200
+				test_every_n_epochs = 500
 
 			save_every_n_epochs = 50
 			data_params['split_id'] = args.split

@@ -15,6 +15,31 @@ from cnn_utils import classification_utils
 sys.path.append('../medipy-lib')
 import medipy.metrics as medipy_metrics
 
+
+class TargetSpaceLoss(object):
+	'''
+	Computes a loss function against a warped ground truth
+	'''
+	def __init__(self,
+				 src_volume,
+				 spatial_transform_model,
+	             loss_fn,
+		):
+		self.src_volume = src_volume
+		self.spatial_transform_model = spatial_transform_model
+		self.spatial_transform_model.trainable = False
+		self.loss_fn = loss_fn
+
+	def compute_loss(self, y_true, y_pred):
+		# y_true is the target volume
+		warped, flow = self.spatial_transform_model([self.src_volume, y_true])
+
+		# flatten time and channels dimension together
+		# warp the ground truth
+		y_true_warped = transform_network_utils.affineWarp(
+			y_true, self.transform_layer_output, self.pad_val)
+		return self.loss_fn(y_true_warped, y_pred)
+
 def log_losses(progressBar, tensorBoardWriter, logger, loss_names, loss_vals, iter_count):
 	'''
 	Writes loss names and vals to keras progress bar, tensorboard, and a python logger
@@ -93,6 +118,8 @@ def eval_seg_sas_from_gen(sas_model, atlas_vol, atlas_labels,
 		warped, warp = sas_model.predict([atlas_vol, X])
 
 		# warp our source models according to the predicted flow field. get rid of channels
+		if Y.shape[-1] == 1:
+			Y = Y[..., 0]
 		preds_batch = seg_warp_model.predict([atlas_labels[..., np.newaxis], warp])[..., 0]
 		preds_oh = classification_utils.labels_to_onehot(preds_batch, label_mapping=label_mapping)
 
@@ -186,9 +213,9 @@ def segment_vol_by_slice(segmenter_model, X, label_mapping, batch_size=8, Y_oh=N
 	:param batch_size:
 	:return:
 	'''
-	n_slices = X.shape[2]
+	n_slices = X.shape[-2]
 	n_labels = len(label_mapping)
-	preds = np.zeros(X.shape[:-1])
+	preds = np.zeros(X.shape[:-1] + (1,))
 	n_batches = int(np.ceil(float(n_slices) / batch_size))
 
 	cce_total = 0.
@@ -210,11 +237,10 @@ def segment_vol_by_slice(segmenter_model, X, label_mapping, batch_size=8, Y_oh=N
 
 			# we want an average over slices, so make sure we count the correct number in the batch
 			cce_total += slice_cce * X_batched_slices.shape[0]
-
 		# convert onehot to labels and assign to preds volume
 		preds[0, :, :, sbi * batch_size: min(n_slices, (sbi + 1) * batch_size)] \
 			= np.transpose(classification_utils.onehot_to_labels(
-			preds_slices_oh, label_mapping=label_mapping), (1, 2, 0))
+			preds_slices_oh, label_mapping=label_mapping), (1, 2, 0))[..., np.newaxis]
 	if compute_cce:
 		return preds, cce_total / float(n_slices)
 	else:

@@ -46,6 +46,9 @@ class MRIDataset(object):
 		if 'dataset_root_valid' not in params.keys():
 			params['dataset_root_valid'] = 'vm'
 
+		if 'n_shot' not in params.keys():
+			params['n_shot'] = 0
+
 		self.profiler_logger = profiler_logger
 		self.params = params
 		self.logger = logger
@@ -105,6 +108,18 @@ class MRIDataset(object):
 			np.random.seed(self.params['valid_seed'])
 		np.random.shuffle(self.valid_files)
 
+		# exclude files that we used in the cvpr test set
+		if 'exclude_from_validation_list' in self.params.keys():
+			with open(self.params['exclude_from_validation_list'], 'r') as f:
+				exclude_subjects = f.readlines()
+			exclude_subjects = [f.strip() for f in exclude_subjects]
+			print(exclude_subjects)
+			remove_valid_idxs = [i for i,f in enumerate(self.valid_files) if f in exclude_subjects]
+			remove_valid_files = [self.valid_files[i] for i in remove_valid_idxs]
+			self._print('Excluding {} subjects from validation set: {}'.format(len(remove_valid_idxs), remove_valid_files))
+			valid_files_new = [self.valid_files[i] for i in range(len(self.valid_files)) if i not in remove_valid_idxs]
+			self.valid_files = valid_files_new[:]
+
 		# get validation files from the end
 		self.valid_files = self.valid_files[:self.params['n_validation']]
 
@@ -113,12 +128,13 @@ class MRIDataset(object):
 			self.n_train = len(self.train_files)
 		else:
 			# only use the number that was requested
-			self.n_train = self.params['n_unlabeled']
+			self.n_train = self.params['n_unlabeled'] + self.params['n_shot']
 
 		load_additional_subject_files = []
 		if 'use_subjects_as_source' in self.params.keys():
 			# make sure we include the source subject file in the training list
 			for source_subject in self.params['use_subjects_as_source']:
+				print(source_subject)
 				subject_file_idx = [i for i, f in enumerate(self.train_files) if source_subject in f]
 
 				if len(subject_file_idx) == 0:
@@ -133,9 +149,11 @@ class MRIDataset(object):
 					self.train_files.remove(subject_file)
 
 				load_additional_subject_files.append(subject_file)
-				
 		# only store as many files as we need
-		self.train_files = self.train_files[:self.n_train] + load_additional_subject_files
+		self.train_files = list(set(
+			self.train_files[:self.n_train] + load_additional_subject_files))
+		self.n_train = len(self.train_files)
+
 		self._print('Got {} training files and {} additional source (atlas) files!'.format(
 			len(self.train_files), len(load_additional_subject_files)))
 
@@ -171,7 +189,9 @@ class MRIDataset(object):
 			self.ids_labeled_train = ['atlas']
 			labeled_idxs_train = []
 
-		elif 'use_subjects_as_source' in self.params.keys():
+		elif 'use_subjects_as_source' in self.params.keys() and self.params['n_shot'] == 0:
+			self._print('Using specified subjects as atlases: {}'.format(
+				self.params['use_subjects_as_source']))
 			# pick out the subject we selected
 			labeled_idxs_train = []
 			for source_subject in self.params['use_subjects_as_source']:
@@ -187,6 +207,8 @@ class MRIDataset(object):
 				use_labels=self.label_mapping,
 			)
 		else:
+			self._print('Including {} subjects in training set'.format(
+				self.params['n_shot']))
 			if 'split_id' in self.params.keys():
 				np.random.seed(self.params['split_id'])
 
@@ -218,7 +240,7 @@ class MRIDataset(object):
 
 
 	def load_dataset(self, load_n=None, load_segs=True, load_source_segs=True,
-					 load_source_contours=True):
+					 load_source_contours=True, valid_files_list=None):
 		'''
 		Main entry point for loading dataset
 		:return: (X, Y, ids) tuples for unlabeled set, labeled training set and labeled validation set
@@ -251,7 +273,11 @@ class MRIDataset(object):
 		# now pick out our validation set from the valid set and our "unlabeled" set from the training set
 		unlabeled_idxs = [i for i in range(self.n_train) if i not in labeled_idxs_train]
 		self.files_unlabeled_train = [self.train_files[i] for i in unlabeled_idxs]
-		self.files_labeled_valid = self.valid_files
+		if valid_files_list is not None:
+			self.files_labeled_valid = valid_files_list
+			self._print('Setting validation set to {} files in input list'.format(len(valid_files_list)))
+		else:
+			self.files_labeled_valid = self.valid_files
 
 		# set to None by default
 		self.segs_labeled_valid = None
@@ -333,8 +359,12 @@ class MRIDataset(object):
 
 		# load final test set and filter labels
 		if 'final_test' in self.params.keys() and self.params['final_test']:
-			self.files_labeled_test = _get_vol_files_list('test', get_unnormalized=self.params['unnormalized'])
+			self.files_labeled_test = _get_vol_files_list('test', get_unnormalized=True)
+			
+			np.random.seed(self.params['test_seed'])
+			np.random.shuffle(self.files_labeled_test)
 
+			self.files_labeled_test = self.files_labeled_test[:self.params['n_test']]
 			self.vols_labeled_test, self.segs_labeled_test, self.contours_labeled_test, self.ids_labeled_test \
 				= load_dataset_vols(
 				vol_files=self.files_labeled_test,
@@ -375,7 +405,6 @@ class MRIDataset(object):
 			       (vols_valid_labeled, segs_valid_labeled, contours_valid_labeled, ids_valid_labeled), \
 				   self.label_mapping
 		elif 'use_subjects_as_source' in self.params.keys() and self.params['use_subjects_as_source'] is not None:
-			self.params['n_shot'] = len(self.params['use_subjects_as_source'])
 
 			(vols_train_unlabeled, segs_train_unlabeled, contours_train_unlabeled, ids_train_unlabeled), \
 			(vols_train_labeled, segs_train_labeled, contours_train_labeled, ids_train_labeled), \
@@ -456,7 +485,7 @@ class MRIDataset(object):
 
 	def gen_vols_batch(self, dataset_splits=['labeled_train'],
 	                   batch_size=1, randomize=True,
-	                   load_segs=True, load_contours=True,
+	                   load_segs=False, load_contours=False,
 	                   convert_onehot=False,
 	                   label_mapping=None, return_ids=False):
 
@@ -494,10 +523,11 @@ class MRIDataset(object):
 				files_list += self.files_labeled_test
 
 		n_files = len(files_list)
-
-		if X_all.shape[0] == n_files:  # all of the vols are loaded, so we can sample from vols instead of loading from file
+		n_loaded_vols = np.sum([x.shape[0] for x in X_all])
+		# if all of the vols are loaded, so we can sample from vols instead of loading from file
+		if n_loaded_vols == n_files:  			
 			load_from_files = False
-			# just concatenate the pre-loaded vols and sample from them
+
 			X_all = np.concatenate(X_all, axis=0)
 			if load_segs and len(Y_all) > 0:
 				Y_all = np.concatenate(Y_all, axis=0)
@@ -506,6 +536,8 @@ class MRIDataset(object):
 
 			if load_contours and len(contours_all) > 0:
 				contours_all = np.concatenate(contours_all, axis=0)
+			else:
+				contours_all = None
 		else:
 			load_from_files = True
 
@@ -520,23 +552,36 @@ class MRIDataset(object):
 			idxs = np.linspace(0, min(n_files, batch_size), batch_size, endpoint=False, dtype=int)
 
 		while True:
-			X = [None] * batch_size
-			Y = [None] * batch_size
-			contours = [None] * batch_size
 			start = time.time()
 
-			if load_from_files:
+			if not load_from_files:
 				# if vols are pre-loaded, simply sample them
 				X = X_all[idxs]
 
 				if load_segs and Y_all is not None:
 					Y = Y_all[idxs]
+				else:
+					Y = None
 				
 				if load_contours and contours_all is not None:
 					contours = contours_all[idxs]
+				else:
+					contours = None
 
 				batch_files = [files_list[i] for i in idxs]
 			else:
+				X = [None] * batch_size
+
+				if load_segs:
+					Y = [None] * batch_size
+				else:
+					Y = None
+
+				if load_contours:
+					contours = [None] * batch_size
+				else:
+					contours = None
+
 				batch_files = []
 				# load from files as we go
 				for i, idx in enumerate(idxs.tolist()):
@@ -566,7 +611,8 @@ class MRIDataset(object):
 
 			if load_contours and isinstance(contours, list):
 				contours = np.concatenate(contours, axis=0)
-
+			
+			# pick idxs for the next batch
 			if randomize:
 				idxs = np.random.choice(n_files, batch_size, replace=True)
 			else:
