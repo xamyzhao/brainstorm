@@ -599,8 +599,7 @@ def _test_mrids_load_source_vol():
 		'use_labels': voxelmorph_labels
 	})
 	ds._get_files_list()
-	ds._load_source_vol(debug=False,
-	                     load_source_segs=True, load_source_contours=True)
+	ds._load_source_vol(load_source_segs=True, load_source_contours=True)
 	# Y should consist of segmentation labels (channel 0) and contours (channel 1)
 	assert ds.segs_labeled_train.shape[-1] == 2
 	assert len(np.unique(ds.segs_labeled_train[..., 0])) == 31  # 30 voxelmorph labels plus bkg
@@ -619,8 +618,7 @@ def _test_mrids_load_dataset():
 		'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
 		'use_labels': voxelmorph_labels
 	})
-	ds.load_dataset(debug=False,
-					load_segs=True,
+	ds.load_dataset(load_segs=True,
 	                load_source_segs=True, load_source_contours=False)
 
 	# check that we loaded the specified number of files
@@ -812,8 +810,6 @@ def load_dataset_vols(
 	if load_contours:
 		# we will store the contours as a binary mask with 1 channel
 		Y_contours = np.zeros((load_n,) + vol_size + (1,), dtype=int)
-
-
 
 	# load the volumes (and segmentations) from disk
 	ids = []
