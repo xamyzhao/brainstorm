@@ -64,6 +64,7 @@ class MRIDataset(object):
 		self.display_name += '_{}ul'.format(self.params['n_unlabeled'])
 
 		if self.params['use_atlas_as_source']:
+			# use only the voxelmorph atlas as a source vol
 			self.display_name += '_atlas-l'
 		elif 'use_subjects_as_source' in self.params.keys() and self.params['use_subjects_as_source'] is not None:
 			if not isinstance(self.params['use_subjects_as_source'], list):
@@ -113,7 +114,7 @@ class MRIDataset(object):
 			with open(self.params['exclude_from_validation_list'], 'r') as f:
 				exclude_subjects = f.readlines()
 			exclude_subjects = [f.strip() for f in exclude_subjects]
-			print(exclude_subjects)
+
 			remove_valid_idxs = [i for i,f in enumerate(self.valid_files) if f in exclude_subjects]
 			remove_valid_files = [self.valid_files[i] for i in remove_valid_idxs]
 			self._print('Excluding {} subjects from validation set: {}'.format(len(remove_valid_idxs), remove_valid_files))
@@ -283,7 +284,7 @@ class MRIDataset(object):
 		self.segs_labeled_valid = None
 		self.segs_unlabeled_train = None
 		if not self.params['load_vols']:
-			# load some dummy vols so we can get the sizes
+			# load some dummy vols so we can get the correct shapes
 			self.vols_labeled_valid = self.vols_labeled_train[[0]]
 			self.vols_unlabeled_train = self.vols_labeled_train[[0]]
 			self.contours_labeled_valid = self.contours_labeled_train[[0]]
@@ -314,7 +315,6 @@ class MRIDataset(object):
 			)
 
 		# filter labels only if we have not done so already
-		# TODO: we should re-compute the contours if we are filtering segs
 		if self.label_mapping is None and load_segs:
 			# keep common labels
 			atlas_labels = np.unique(self.segs_atlas)

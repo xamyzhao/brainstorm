@@ -67,17 +67,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 			if self.arch_params['do_coupled_sampling']:
 				exp_name += '_coupled'
-		if self.aug_tmf:
-			exp_name += '_tm-flowonly-aug'
-			if self.data_params['n_tm_aug'] is not None and not self.data_params['aug_in_gen']:
-				exp_name += '{}'.format(self.data_params['n_tm_aug'])
-			else:
-				exp_name += '-gen'
 
-			exp_name += '-{}'.format(self.aug_model_name)
-
-			if self.aug_randmult:
-				exp_name += '-randmult'
 
 		if self.aug_sas:
 			exp_name += '_sasaug'
@@ -100,11 +90,6 @@ class Segmenter(ExperimentClassBase.Experiment):
 		self.arch_params = arch_params
 		self.data_params = data_params
 
-		self.do_profile = True
-		self.profiled_iters = 0
-
-		self.epoch_count = 0
-
 		# i.e. are we segmenting slices or volumes
 		self.pred_img_shape = data_params['pred_img_shape']
 
@@ -115,11 +100,14 @@ class Segmenter(ExperimentClassBase.Experiment):
 		self.n_aug_dims = len(self.aug_img_shape) - 1
 		self.display_slice_idx = 112
 
-		self.batch_count = 0
 
 		self.logger = None
 		self.profiler_logger = None
+		self.do_profile = True
+		self.profiled_iters = 0
 
+		self.epoch_count = 0
+		self.batch_count = 0
 		if 'pretrain_l2' in self.arch_params.keys():
 			self.loss_fn = keras_metrics.mean_squared_error
 			self.loss_name = 'l2'
@@ -131,17 +119,11 @@ class Segmenter(ExperimentClassBase.Experiment):
 		if 'warpoh' not in self.arch_params.keys():
 			self.arch_params['warpoh'] = False
 
-
 		self.n_aug = None  # do augmentation through the generator by default
 
 		self.aug_tm = False # flow and appearance transform models
 		self.aug_sas = False # flow model for single-atlas segmentation
 		self.aug_rand = False # random flow and multiplicative intensity
-
-		# ablation studies
-		self.aug_tmf = False  # flow transform model only
-		self.aug_randmult = False # random multiplicative intensity
-
 
 		if 'aug_rand' in data_params.keys() and data_params['aug_rand']:
 			self.aug_rand = True
@@ -160,10 +142,8 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self.aug_tm = False
 			if 'n_sas_aug' in data_params.keys() and data_params['n_sas_aug'] is not None:
 				self.n_aug = data_params['n_sas_aug']
-		elif data_params['aug_tmf']:
-			self.aug_tmf = True
 
-		# come up with a name for our flow and color models so we can put them in this model name
+		# come up with a short name for our flow and color models so we can put them in this model name
 		if self.arch_params['tm_flow_model'] is not None and self.arch_params['tm_color_model'] is not None \
 				and self.aug_tm:
 			if 'epoch' in self.arch_params['tm_flow_model']:
@@ -179,12 +159,11 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self.aug_model_name = 'tmflow-{}'.format(
 				os.path.basename(self.arch_params['tm_flow_model'].split('/models/')[0]))
 
+		# do augmentation through generator, or pre-augment training set
 		if 'aug_in_gen' not in data_params.keys():
 			self.data_params['aug_in_gen'] = False
-		
 		if self.data_params['aug_in_gen']:
 			self.n_aug = None
-			self.aug_in_gen = True  # TODO: needed?
 
 		# let dataset loader figure out short name
 		if 'adni' in data_params['dataset_name']:
@@ -192,6 +171,8 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self.dataset = mri_loader.MRIDataset(self.data_params, self.logger)
 			self.dataset_name = self.dataset.create_display_name()
 
+
+		# automatic early stopping based on validation loss
 		if 'patience' in arch_params.keys():
 			validation_losses_buff_len = arch_params['patience']
 		else:
@@ -204,6 +185,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 		# keep track of all ids the network sees as a sanity check
 		self.all_ul_ids = []
 		self.all_train_ids = []
+
 
 	def load_data(self, load_n=None):
 		self.dataset.logger = self.logger
@@ -243,6 +225,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 		with open(os.path.join(self.exp_dir, 'ids_labeled_validation.txt'), 'w') as f:
 			f.writelines(['{}\n'.format(f) for f in self.ids_labeled_valid])
 
+		# save dataset and architecture parameters to files
 		with open(os.path.join(self.exp_dir, 'arch_params.json'), 'w') as f:
 			json.dump(self.arch_params, f)
 		with open(os.path.join(self.exp_dir, 'data_params.json'), 'w') as f:
@@ -278,7 +261,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self._create_augmented_examples()
 			self.logger.debug('Augmented classifier training set: vols {}, segs {}'.format(
 				self.X_labeled_train.shape, self.segs_labeled_train.shape))
-		elif self.aug_tm or self.aug_rand or self.aug_tmf or self.aug_randmult:
+		elif self.aug_tm or self.aug_rand:
 			# augmentation by transform model or random flow+intensity requires synthesizing
 			# a lot of examples, so we'll just do this per-batch
 			aug_by = []
@@ -286,11 +269,6 @@ class Segmenter(ExperimentClassBase.Experiment):
 				aug_by += ['tm']
 			if self.aug_rand:
 				aug_by += ['rand']
-
-			if self.aug_tmf and self.aug_randmult:
-				aug_by += ['tmf-randmult']
-			elif self.aug_tmf and not self.aug_randmult:
-				aug_by += ['tmf']
 
 			# these need to be done in the generator
 			self.aug_train_gen = self._generate_augmented_batch(
@@ -318,7 +296,8 @@ class Segmenter(ExperimentClassBase.Experiment):
 			return_ids=True,
 		)
 
-		# just pick some random slices for validation
+		# we will compute validation losses on all validation volumes
+		# just pick some random slices to display for the validation set later
 		rand_subjs = np.random.choice(self.X_labeled_valid.shape[0], batch_size)
 		rand_slices = np.random.choice(self.aug_img_shape[2], batch_size, replace=False)
 		
@@ -414,7 +393,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 			self.flow_rand_aug_model.summary(print_fn=self.logger.debug)
 
-		if self.aug_tm or self.aug_sas or self.aug_tmf:
+		if self.aug_tm or self.aug_sas:
 			from keras.models import load_model
 			self.flow_aug_model = load_model(
 				self.arch_params['tm_flow_model'],
@@ -551,9 +530,9 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self.logger.debug('Multiple atlases, sampling source vols from generator')
 
 		while True:
-			if not use_single_atlas:  # single atlas
+			if not use_single_atlas:
+				# randomly select an atlas from our source volume generator
 				source_X, source_segs, source_contours, source_ids = next(source_gen)
-
 
 			# keep track of which unlabeled subjects we are using in training
 			ul_ids = []
@@ -570,7 +549,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 			if aug_batch_by == 'rand':
 				X_aug, flow = self.flow_rand_aug_model.predict(source_X)
 
-				# color augmentation by additive or multiplicative factor
+				# color augmentation by additive or multiplicative factor. randomize the factor and then tile to correct shape
 				if 'offset_amp' in self.data_params['aug_params']:
 					X_aug += np.tile(
 						(np.random.rand(X_aug.shape[0], 1, 1, 1) * 2. - 1.) * self.data_params['aug_params'][
@@ -586,34 +565,6 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 				# Y_to_aug = classification_utils.labels_to_onehot(Y_to_aug, label_mapping=self.label_mapping)
 				Y_aug = self.seg_warp_model.predict([source_segs, flow])
-			elif 'tmf' in aug_batch_by:
-				# ablation study with our flow transform model and either no appearance model or a rand appearance model
-
-				# only sample a flow target
-				X_flowtgt, _, _, ul_flow_ids = next(self.unlabeled_gen_raw)
-				ul_ids += ul_flow_ids
-
-				if self.do_profile:
-					self.profiler_logger.info('Sampling aug tgt took {}'.format(time.time() - st))
-				self.aug_target = X_flowtgt
-
-				_, flow = self.flow_aug_model.predict([source_X, X_flowtgt])
-				X_aug = self.vol_warp_model.predict([source_X, flow])
-				if 'randmult' in aug_batch_by:
-					X_aug *= np.tile(
-						1. + (np.random.rand(X_aug.shape[0], 1, 1, 1) * 2. - 1.) * self.data_params['aug_params'][
-							'mult_amp'],
-						(1,) + X_aug.shape[1:])
-					X_aug = np.clip(X_aug, 0., 1.)
-
-				if self.do_profile:
-					self.profiler_logger.info('Running flow aug took {}'.format(time.time() - st))
-
-				st = time.time()
-				# now warp the labels to match
-				Y_aug = self.seg_warp_model.predict([source_segs, flow])
-				if self.do_profile:
-					self.profiler_logger.info('Warping labels took {}'.format(time.time() - st))
 			elif aug_batch_by == 'tm':
 				if self.arch_params['do_coupled_sampling']:
 					# use the same target for flow and color
@@ -763,14 +714,13 @@ class Segmenter(ExperimentClassBase.Experiment):
 		self.logger.debug('Base segmenter model')
 		self.base_segmenter_model.summary(print_fn=self.logger.debug)
 		if 'pretrain_l2' in self.arch_params.keys():
+			# pretrain the network using L2 on the layer before the softmax. this helps with convergence
 			self.segmenter_model = Model(
 				inputs=self.base_segmenter_model.inputs,
 				outputs=self.base_segmenter_model.get_layer('unet_dec_conv2D_final').output,
 				name='segmenter_pre_softmax')
 
 		self.models = [self.segmenter_model]
-
-		self.trainer_model = self.segmenter_model # for fit_generator
 
 		super(Segmenter, self).create_models()
 
@@ -915,7 +865,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 		if self.do_profile:
 			self.profiler_logger.info('Generating training batch took {}'.format(time.time() - start))
 
-		# a little hacky, but we're using this as a flag for whether we are pretraining
+		# if we are pre-training without softmax (using L2 on log of prediction)
 		if self.loss_name == 'l2':
 			self.Y_train_batch = np.clip(np.log(self.Y_train_batch), -100., 0.)
 
@@ -984,7 +934,6 @@ class Segmenter(ExperimentClassBase.Experiment):
 			self.loss_name = 'CE'
 
 			self.segmenter_model = self.base_segmenter_model
-			self.trainer_model = self.segmenter_model # for fit_generator
 			self.models = [self.segmenter_model]
 
 			self.compile_models()

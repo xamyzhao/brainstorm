@@ -195,19 +195,21 @@ if __name__ == '__main__':
 	ap = argparse.ArgumentParser()
 	# common params
 	ap.add_argument('exp_type', nargs='*', type=str, help='trans (transform model), fss (few-shot segmentation)')
-	ap.add_argument('--gpu', nargs='*', type=int, help='gpu id(s) to use', default=1)
-	ap.add_argument('--batch_size', nargs='?', type=int, default=64)
-	ap.add_argument('--data', nargs='?', type=str, help='name of dataset', default=None)
+	ap.add_argument(['--gpu', '-g'], nargs='*', type=int, help='gpu id(s) to use', default=1)
+	ap.add_argument(['--batch_size', '-bs'], nargs='?', type=int, default=64)
+	ap.add_argument(['--data', '-d'], nargs='?', type=str, help='name of dataset', default=None)
 
-	ap.add_argument('--model', type=str, help='model architecture', default=None)
-	ap.add_argument('--epoch', nargs='?', help='epoch number or "latest"', default=None)
+	ap.add_argument(['--model', '-m'], type=str, help='model architecture', default=None)
+	ap.add_argument(['--epoch', '-e'], nargs='?', help='epoch number or "latest"', default=None)
 
-	ap.add_argument('--print_every', nargs='?', type=int,
-					help='Number of seconds between printing training batches as images', default=120)
+
 
 	ap.add_argument('--lr', nargs='?', type=float, help='Learning rate', default=1e-4)
-	ap.add_argument('--debug', action='store_true', help='Load fewer and save more often', default=False)
-	ap.add_argument('--loadn', type=int, help='Load fewer and save more often', default=None)
+	ap.add_argument('--debug', action='store_true', help='Flag for debug mode (saves more often, only runs for 10 epochs)',
+					default=False)
+	ap.add_argument('--loadn', type=int, help='Number of volumes to load (instead of full dataset)', default=None)
+	ap.add_argument('--print_every', nargs='?', type=int,
+					help='Number of seconds between printing training batches as images. Useful when debugging', default=120)
 
 	ap.add_argument('--early', action='store_true', help='Simply run eval function', default=False,
 					dest='early_stopping')
@@ -226,10 +228,6 @@ if __name__ == '__main__':
 	ap.add_argument('--train.patience', nargs='?', type=int, default=20,
 					help='Number of epochs to wait to see if validation loss goes down', dest='train_patience')
 
-	# data params
-	ap.add_argument('-split', nargs='?', type=int, default=None,
-					help='ID of random train-validation dataset split to load')
-
 	# augmentation params
 	ap.add_argument('--aug.flow_amp', nargs='?', type=int, default=None,
 					dest='aug_rand_flow_amp',
@@ -246,12 +244,10 @@ if __name__ == '__main__':
 					help='do aug with random flow fields and rand multiplicative intensity')
 	ap.add_argument('--aug_tm', action='store_true', default=False,
 					help='do aug with the transform models in arch_params')
-	ap.add_argument('--aug_tmf', action='store_true', default=False,
-					help='do aug with the flow transform model')
-	ap.add_argument('--aug_tmfrm', action='store_true', default=False,
-					help='do aug with the flow transform model and rand multiplicative intensity')
+
 	ap.add_argument('--coupled', action='store_true', default=False,
 					help='coupled sampling of targets for transform models and fss')
+
 	args = ap.parse_args()
 	experiment_engine.configure_gpus(args.gpu)
 
@@ -343,7 +339,6 @@ if __name__ == '__main__':
 				data_params = named_data_params[args.data]
 
 			arch_params['lr'] = args.lr
-			data_params['split_id'] = args.split
 
 			if 'save_every' in arch_params.keys():
 				save_every_n_epochs = arch_params['save_every']
@@ -559,7 +554,6 @@ if __name__ == '__main__':
 				test_every_n_epochs = 500
 
 			save_every_n_epochs = 50
-			data_params['split_id'] = args.split
 
 			if args.coupled:
 				arch_params['do_coupled_sampling'] = True
