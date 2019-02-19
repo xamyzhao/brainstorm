@@ -178,7 +178,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 		else:
 			validation_losses_buff_len = 10
 		super(Segmenter, self).__init__(data_params, arch_params,
-										prompt_delete=prompt_delete)
+										prompt_delete_existing=prompt_delete)
 
 		self.validation_losses_buffer = [np.nan] * validation_losses_buff_len
 

@@ -195,12 +195,12 @@ if __name__ == '__main__':
 	ap = argparse.ArgumentParser()
 	# common params
 	ap.add_argument('exp_type', nargs='*', type=str, help='trans (transform model), fss (few-shot segmentation)')
-	ap.add_argument(['--gpu', '-g'], nargs='*', type=int, help='gpu id(s) to use', default=1)
-	ap.add_argument(['--batch_size', '-bs'], nargs='?', type=int, default=64)
-	ap.add_argument(['--data', '-d'], nargs='?', type=str, help='name of dataset', default=None)
+	ap.add_argument('-g', '--gpu', nargs='*', type=int, help='gpu id(s) to use', default=1)
+	ap.add_argument('-b', '--batch_size', nargs='?', type=int, default=64)
+	ap.add_argument('-d', '--data', nargs='?', type=str, help='name of dataset', default=None)
 
-	ap.add_argument(['--model', '-m'], type=str, help='model architecture', default=None)
-	ap.add_argument(['--epoch', '-e'], nargs='?', help='epoch number or "latest"', default=None)
+	ap.add_argument('-m', '--model', type=str, help='model architecture', default=None)
+	ap.add_argument('--epoch', nargs='?', help='epoch number or "latest"', default=None)
 
 
 
@@ -517,17 +517,15 @@ if __name__ == '__main__':
 					data_params = json.load(f)
 
 			data_params['aug_tm'] = False
-			data_params['aug_tmf'] = False
 			data_params['aug_rand'] = False
 			data_params['aug_sas'] = False
 			data_params['aug_randmult'] = False
 
-			if args.aug_rand or args.aug_tmfrm:
+			if args.aug_rand:
 				data_params['load_vols'] = False
 				for k, v in flow_aug_params[args.data].items():
 					data_params[k] = v
 				data_params['aug_rand'] = args.aug_rand
-				data_params['aug_randmult'] = args.aug_tmfrm
 
 				if args.aug_rand_flow_amp is not None:	
 					data_params['aug_params']['flow_amp'] = args.aug_rand_flow_amp
@@ -537,9 +535,6 @@ if __name__ == '__main__':
 			if args.aug_tm:
 				data_params['aug_tm'] = True
 				data_params['load_vols'] = False
-			elif args.aug_tmf or args.aug_tmfrm: # only load the flow transform model, not appearance
-				data_params['aug_tmf'] = True
-				data_params['load_vols'] = False
 
 			elif args.aug_sas:
 				data_params['load_vols'] = False
@@ -547,7 +542,7 @@ if __name__ == '__main__':
 				data_params['n_sas_aug'] = data_params['n_unlabeled']
 				data_params['aug_in_gen'] = False
 
-			if args.aug_tm or args.aug_sas or args.aug_rand or args.aug_tmfrm:
+			if args.aug_tm or args.aug_sas or args.aug_rand:
 				test_every_n_epochs = 200
 			else:
 				# test no-aug less often because it will be pretty bad and will plateau quickly
