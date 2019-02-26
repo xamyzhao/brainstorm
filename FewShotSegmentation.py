@@ -166,10 +166,9 @@ class Segmenter(ExperimentClassBase.Experiment):
             self.n_aug = None
 
         # let dataset loader figure out short name
-        if 'adni' in data_params['dataset_name']:
-            self.data_params['n_dims'] = self.n_aug_dims
-            self.dataset = mri_loader.MRIDataset(self.data_params, self.logger)
-            self.dataset_name = self.dataset.create_display_name()
+        self.data_params['n_dims'] = self.n_aug_dims
+        self.dataset = mri_loader.MRIDataset(self.data_params, self.logger)
+        self.dataset_name = self.dataset.create_display_name()
 
 
         # automatic early stopping based on validation loss

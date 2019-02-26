@@ -26,7 +26,7 @@ import src.losses as vm_losses
 
 # load validation or test dataset
 do_final_test = True
-ds_key = 'adni-csts2-test'
+ds_key = 'mri-csts2-test'
 label_mapping = main.voxelmorph_labels
 
 eval_data_params = main.named_data_params[ds_key]
@@ -68,11 +68,7 @@ for mi, model_file in enumerate(model_files):
         voxelmorph_model = load_model(
             model_file,
             custom_objects={
-                'tf': tf,
-                'VecInt': nrn_layers.VecInt,
                 'SpatialTransformer': functools.partial(nrn_layers.SpatialTransformer, indexing='xy'),
-                'nrn_utils': nrn_utils,
-                'nrn_layers': nrn_layers,
             },
             compile=False,
         )

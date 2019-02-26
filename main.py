@@ -33,8 +33,8 @@ voxelmorph_labels = [0,
 
 
 named_data_params = {
-    'adni-100-csts2-sup': {  # supervised experiment
-        'dataset_name': 'adni',
+    'mri-100-csts2-sup': {  # supervised experiment
+        'dataset_name': 'mri',
         'source_name': 'centroidsubj2',
         'target_name': 'subjs',
         'use_labels': voxelmorph_labels,
@@ -52,8 +52,8 @@ named_data_params = {
         'n_flow_aug': None,
         'warp_labels': True,
     },
-    'adni-100-csts2': {
-        'dataset_name': 'adni',
+    'mri-100-csts2': {
+        'dataset_name': 'mri',
         'source_name': 'centroidsubj2',
         'target_name': 'subjs',
         'use_labels': voxelmorph_labels,
@@ -71,8 +71,8 @@ named_data_params = {
         'n_flow_aug': None,
         'warp_labels': True,
     },
-    'adni-csts2-test': {
-        'dataset_name': 'adni',
+    'mri-csts2-test': {
+        'dataset_name': 'mri',
         'source_name': 'centroidsubj2',
         'target_name': 'subjs',
         'use_labels': voxelmorph_labels,
@@ -92,12 +92,12 @@ named_data_params = {
         'n_flow_aug': None,
         'warp_labels': True,
     },
-    'adni-100-bts': {  # buckner centroid to subjets
-        'dataset_name': 'adni',
+    'mri-100-bts': {  # buckner centroid to subjets
+        'dataset_name': 'mri',
         'source_name': 'bucknercentroid',
         'target_name': 'subjs',
         'use_labels': voxelmorph_labels,
-        'exclude_from_valid_list': 'adni-100-bts-valid.txt',
+        'exclude_from_valid_list': 'mri-100-bts-valid.txt',
         'use_atlas_as_source': False,
         'use_subjects_as_source': [
             '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990104_vc700.npz',
@@ -114,52 +114,8 @@ named_data_params = {
         'warp_labels': True,
         'n_dims': 3,  # TODO: deprecate?
     },
-    'adni-100-2atlas_1': {
-        'dataset_name': 'adni',
-        'source_name': 'centroid_buckner',
-        'target_name': 'subjs',
-        'use_labels': voxelmorph_labels,
-        'exclude_from_valid_list': 'adni-100-bts-valid.txt',
-        'use_atlas_as_source': False,
-        'use_subjects_as_source': [
-            'OASIS_OAS1_0327_MR1_mri_talairach_orig',
-            '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990715_vc1131.npz',#990921_vc1289.npz'
-            ],
-        'img_shape': (160, 192, 224, 1),
-        'pred_img_shape': (160, 192, 1),
-        'aug_img_shape': (160, 192, 224, 1),
-        'n_unlabeled': 100,
-        'n_validation': 50,
-        'load_vols': True,
-        'aug_in_gen': True,
-        'n_vte_aug': None,
-        'n_flow_aug': None,
-        'warp_labels': True,
-    },
-    'adni-100-2atlas': {
-        'dataset_name': 'adni',
-        'source_name': 'centroid_buckner',
-        'target_name': 'subjs',
-        'use_labels': voxelmorph_labels,
-        'exclude_from_valid_list': 'adni-100-bts-valid.txt',
-        'use_atlas_as_source': False,
-        'use_subjects_as_source': [
-            'OASIS_OAS1_0327_MR1_mri_talairach_orig',
-            '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990525_vc1024.npz',#990921_vc1289.npz'
-            ],
-        'img_shape': (160, 192, 224, 1),
-        'pred_img_shape': (160, 192, 1),
-        'aug_img_shape': (160, 192, 224, 1),
-        'n_unlabeled': 100,
-        'n_validation': 50,
-        'load_vols': True,
-        'aug_in_gen': True,
-        'n_tm_aug': None,
-        'n_flow_aug': None,
-        'warp_labels': True,
-    },
     'buckner-test': {
-        'dataset_name': 'adni',
+        'dataset_name': 'mri',
         'source_name': 'bucknercentroid',
         'target_name': 'subjs',
         'dataset_root_train': 'vm',
@@ -284,8 +240,8 @@ if __name__ == '__main__':
                     'model_arch': 'flow_bidir_separate',
                     'save_every' : 10,
                     'test_every': 25,
-                    'transform_reg_flow': 'grad_l2', 'transform_reg_lambda_flow': 1,  # 0.5,
-                    'recon_loss_Iw': 'cc_vm',  # 'cc',
+                    'transform_reg_flow': 'grad_l2', 'transform_reg_lambda_flow': 1,
+                    'recon_loss_Iw': 'cc_vm',
                     'cc_loss_weight': 1, 'cc_win_size_Iw': 9,
                     'end_epoch': 500,
                     'init_weights_from': [
@@ -301,11 +257,9 @@ if __name__ == '__main__':
                         'voxelmorph/vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'),
                     'flow_bck_model': ('experiments/'
                         'voxelmorph/vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'),
-                        #'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
-                        #'/models/vm2_cc_bck_epoch500_iter50000.h5'),
                     'transform_reg_color': 'grad-seg-l2', 'transform_reg_lambda_color': 1,
                     'color_transform_in_tgt_space': False,
-                    'include_aux_input': False, # we did not acutally give this info to the model in cvpr
+                    'include_aux_input': False,
                     'recon_loss_I': 'l2-tgt',
                     'recon_loss_wt': 50,
                     'end_epoch': 20,
@@ -374,98 +328,9 @@ if __name__ == '__main__':
                     ),
                     'tm_color_model': (
                         'experiments/'
-                        #'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt1_l2-src-wt50'
-                        'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_grad-seg-l2_regcwt1_l2-src-wt50'
-                    '/models/color_delta_unet_epoch10_iter1000.h5'),
-                },
-                'tgtrecon': {
-                    'nf_enc': [32, 32, 64, 64, 128, 128],
-                    'n_convs_per_stage': 2,
-                    'use_maxpool': True,
-                    'use_residuals': False,
-                    'end_epoch': 100000,
-                    'pretrain_l2': 500,
-                    'warpoh': False,
-                    'tm_flow_model': (
-                        'experiments/voxelmorph/'
-                        'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
-                    ),
-                    'tm_flow_bck_model': (
-                        'experiments/voxelmorph/'
-                        'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
-                    ),
-                    'tm_color_model': (
-                        'experiments/'
-                        #'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt1_l2-src-wt50'
                         'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_grad-seg-l2_regcwt1_l2-tgt-wt50_1'
                     '/models/color_delta_unet_epoch10_iter1000.h5'),
                 },
-                'incontours': {
-                    'nf_enc': [32, 32, 64, 64, 128, 128],
-                    'n_convs_per_stage': 2,
-                    'use_maxpool': True,
-                    'use_residuals': False,
-                    'end_epoch': 10000,
-                    'pretrain_l2': 500,
-                    'warpoh': False,
-                    'tm_flow_model': (
-                        'experiments/voxelmorph/'
-                        'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
-                    ),
-                    'tm_flow_bck_model': (
-                        'experiments/voxelmorph/'
-                        'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
-                    ),
-                    'tm_color_model': (
-                        'experiments/'
-#                        'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
-                        'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_incontours_grad-seg-l2_regcwt1_l2-src-wt50'
-                    '/models/color_delta_unet_epoch10_iter1000.h5'),
-                },
-                'noreg': {
-                    'nf_enc': [32, 32, 64, 64, 128, 128],
-                    'n_convs_per_stage': 2,
-                    'use_maxpool': True,
-                    'use_residuals': False,
-                    'end_epoch': 10000,
-                    'pretrain_l2': 500,
-                    'warpoh': False,
-                    'tm_flow_model': (
-                        'experiments/voxelmorph/'
-                        'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
-                    ),
-                    'tm_flow_bck_model': (
-                        'experiments/voxelmorph/'
-                        'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
-                    ),
-                    'tm_color_model': (
-                        'experiments/'
-                        'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_grad-seg-l2_regcwt0_l2-src-wt50'
-                        '/models/color_delta_unet_epoch10_iter1000.h5'),
-                },
-                '2atlas': {
-                    'nf_enc': [32, 32, 64, 64, 128, 128],
-                    'n_convs_per_stage': 2,
-                    'use_maxpool': True,
-                    'use_residuals': False,
-                    'end_epoch': 10000,
-                    'pretrain_l2': 500,
-                    'warpoh': False,
-                    'tm_flow_model': (
-                        'experiments/'
-                        'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
-                        '/models/vm2_cc_fwd_epoch500_iter50000.h5'),
-                    'tm_flow_bck_model': (
-                        'experiments/'
-                        'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_flow_bidir_separate_grad_l2-regfwt1_cc_vm-win9-wt1'
-                        '/models/vm2_cc_bck_epoch500_iter50000.h5'),
-                    'tm_color_model': (
-                        'experiments/'
-                        'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_color_unet_grad-seg-l2_regcwt1_l2-src-wt50'
-                        #'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327-990525_vc1024_color_unet_incontours_grad-seg-l2_regcwt0.02_l2-src-wt1'
-                        '/models/color_delta_unet_epoch10_iter1000.h5'),
-                },
-
             }
 
             if args.from_dir:
@@ -481,30 +346,25 @@ if __name__ == '__main__':
 
             if args.data:
                 data_params = named_data_params[args.data]
-                #data_params['warp_labels'] = False
 
             arch_params['lr'] = args.lr
 
             flow_aug_params = {
-                'adni-100-csts2': {
+                'mri-100-csts2': {
                     'aug_params': {
-                        #'randflow_type': 'ronneberger',
                         'randflow_type': None,
                         'flow_sigma': None,
                         'flow_amp': 200,
                         'blur_sigma': 12,
-                        #'offset_amp': 0.4,
                         'mult_amp': 0.5,
                     }
                 },
-                'adni-100-bts': {
+                'mri-100-bts': {
                     'aug_params': {
-                        #'randflow_type': 'ronneberger',
                         'randflow_type': None,
                         'flow_sigma': None,
                         'flow_amp': 200,
                         'blur_sigma': 12,
-                        #'offset_amp': 0.4,
                         'mult_amp': 0.4,
                     }
                 }
