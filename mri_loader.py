@@ -30,9 +30,9 @@ voxelmorph_labels =  [0,
                      31, 63,  # choroid plexus
                      ]
 
-vm_vol_root = '/data/ddmg/voxelmorph/data/t1_mix/proc/resize256-crop_x32'
-mri_contours_root = '/afs/csail.mit.edu/u/x/xamyzhao/adni_data/contours'
-buckner_vol_root = '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2'
+mri_vol_root = '' # root directory for MRI data, with volumes and segmentations
+mri_contours_root = '' # we can save contours so that we don't need to compute them every time
+buckner_vol_root = ''
 
 class MRIDataset(object):
     def __init__(self, params, logger=None, profiler_logger=None):
@@ -708,8 +708,8 @@ def _get_vol_files_list(mode='train', dataset_root='vm', get_unnormalized=False,
         vols_folder = 'vols'
 
     if dataset_root == 'vm':
-        vols_dir = vm_vol_root + '/{}/{}/*.npz'.format(mode, vols_folder)
-        segs_dir = vm_vol_root + '/' + mode + '/asegs/' + '*_aseg.npz'
+        vols_dir = mri_vol_root + '/{}/{}/*.npz'.format(mode, vols_folder)
+        segs_dir = mri_vol_root + '/' + mode + '/asegs/' + '*_aseg.npz'
     else:
         vols_dir = buckner_vol_root + '/{}/*.npz'.format(vols_folder)
         segs_dir = os.path.join(buckner_vol_root, 'asegs', '*.npz')
@@ -778,15 +778,16 @@ def _load_vol_and_seg(vol_file,
     if vol_name == 'atlas':
         img_data, seg_data = _load_atlas_vol()
     else:
-        if vm_vol_root in vol_file:
+
+        if mri_vol_root in vol_file:
             vol_base_name = '_'.join(vol_name.split('_')[:-1])
         else:
             vol_base_name = vol_name
 
         img_data = np.load(vol_file)['vol_data'][..., np.newaxis]
         if load_seg or do_mask_vol or load_contours:
-            if vm_vol_root in vol_file:
-                seg_vol_file = vm_vol_root + '/' + mode + '/asegs/' + vol_base_name + '_aseg.npz'
+            if mri_vol_root in vol_file:
+                seg_vol_file = mri_vol_root + '/' + mode + '/asegs/' + vol_base_name + '_aseg.npz'
             elif buckner_vol_root in vol_file:
                 seg_vol_file = os.path.join(buckner_vol_root, 'asegs', vol_base_name + '.npz')
             else:
@@ -886,7 +887,7 @@ def load_dataset_vols(
 
 
 def _load_atlas_vol(slice_idx=None):
-    atlas_root = '/afs/csail.mit.edu/u/x/xamyzhao/voxelmorph-sandbox/voxelmorph/data'
+    atlas_root = '' # atlas volume and segmentations should be stored here
     atlas_data = np.load(os.path.join(atlas_root, 'atlas_norm.npz'))
     if slice_idx:
         return atlas_data['vol'][:,:,[slice_idx]], atlas_data['seg'][:,:,slice_idx]
