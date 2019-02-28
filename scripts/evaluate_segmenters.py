@@ -13,13 +13,11 @@ from keras.optimizers import Adam
 import numpy as np
 import tensorflow as tf
 
-import mri_loader
+from src import mri_loader, utils
 import main
-import utils
 
 sys.path.append('../neuron')
 import neuron.layers as nrn_layers
-import neuron.utils as nrn_utils
 
 sys.path.append('../voxelmorph')
 import src.losses as vm_losses
@@ -108,7 +106,7 @@ for mi, model_file in enumerate(model_files):
         source_X = eval_ds.vols_labeled_train[[0]]
         source_Y = eval_ds.segs_labeled_train[[0]]
 
-        eval_cces, eval_dice, eval_accs = utils.eval_seg_sas_from_gen(
+        eval_cces, eval_dice, eval_accs, eval_ids = utils.eval_seg_sas_from_gen(
             sas_model=voxelmorph_model,
             atlas_vol=source_X, atlas_labels=source_Y,
             eval_gen=eval_gen, label_mapping=label_mapping,

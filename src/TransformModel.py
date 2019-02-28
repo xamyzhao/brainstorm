@@ -4,17 +4,15 @@ import os
 import sys
 import time
 
-import numpy as np
-
 import keras.metrics as keras_metrics
+import mri_loader
+import numpy as np
 from keras.optimizers import Adam
 
-import mri_loader
-
-import networks
+from src import networks
 
 sys.path.append('../evolving_wilds')
-from cnn_utils import classification_utils, file_utils, vis_utils
+from cnn_utils import classification_utils, vis_utils
 from cnn_utils import metrics as my_metrics
 from cnn_utils import ExperimentClassBase
 

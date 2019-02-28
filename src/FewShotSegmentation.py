@@ -1,22 +1,22 @@
 import functools
+import json
 import os
 import re
 import sys
 import time
 
 import cv2
-import json
 import keras.metrics as keras_metrics
+import mri_loader
+import numpy as np
+import utils
 from keras.models import Model
 from keras.optimizers import Adam
-import numpy as np
 
-import mri_loader
-import networks
-import utils
+from src import networks
 
 sys.path.append('../evolving_wilds')
-from cnn_utils import aug_utils, batch_utils, classification_utils, file_utils, vis_utils
+from cnn_utils import batch_utils, classification_utils, file_utils, vis_utils
 from cnn_utils import ExperimentClassBase
 
 sys.path.append('../neuron')

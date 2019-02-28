@@ -1,16 +1,9 @@
-import logging
-import os
-import sys
-
 import argparse
-import cv2
 import json
-import keras.backend as K
-from keras.utils import generic_utils
-import numpy as np
-import tensorflow as tf
+import os
 
 import experiment_engine
+import numpy as np
 
 voxelmorph_labels = [0,
                      16,  # brain stem
@@ -92,7 +85,7 @@ named_data_params = {
         'n_flow_aug': None,
         'warp_labels': True,
     },
-    'mri-100-bts': {  # buckner centroid to subjets
+    'mri-100-bts': {  # buckner centroid to subjects
         'dataset_name': 'mri',
         'source_name': 'bucknercentroid',
         'target_name': 'subjs',
@@ -231,7 +224,6 @@ if __name__ == '__main__':
             since the backwards spatial transform is necessary for learning a 
             color transform model in the atlas' reference frame.
             '''''''''''''''''''''''''''
-            import TransformModel
             test_every_n_epochs = 10
             save_every_n_epochs = 10
 
@@ -308,7 +300,8 @@ if __name__ == '__main__':
             '''''''''''''''''''''''''''
             Few shot segmentation
             '''''''''''''''''''''''''''
-            import FewShotSegmentation
+            from src import FewShotSegmentation, TransformModel
+
             named_arch_params = {
                 'default': {
                     'nf_enc': [32, 32, 64, 64, 128, 128],

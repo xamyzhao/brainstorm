@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import tensorflow as tf
 
-import networks
+from src import networks
 
 sys.path.append('../pynd-lib')
 from pynd import segutils
@@ -68,7 +68,7 @@ def eval_seg_sas_from_gen(sas_model, atlas_vol, atlas_labels,
     )
 
     from keras.models import Model
-    from keras.layers import Input, Lambda, Activation
+    from keras.layers import Input, Activation
     from keras.optimizers import Adam
     n_labels = len(label_mapping)
 
