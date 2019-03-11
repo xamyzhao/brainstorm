@@ -292,7 +292,7 @@ if __name__ == '__main__':
                 test_every_n_epochs = arch_params['test_every']
 
 
-            exp = TransformModel.TransformModelTrainer(data_params, arch_params)
+            exp = transform_models.TransformModelTrainer(data_params, arch_params)
 
             end_epoch = arch_params['end_epoch']
             tm_end_epoch = end_epoch
@@ -300,7 +300,7 @@ if __name__ == '__main__':
             '''''''''''''''''''''''''''
             Few shot segmentation
             '''''''''''''''''''''''''''
-            from src import FewShotSegmentation, TransformModel
+            from src import segmenter_model, transform_models
 
             named_arch_params = {
                 'default': {
@@ -410,7 +410,7 @@ if __name__ == '__main__':
 
 
 
-            exp = FewShotSegmentation.Segmenter(data_params, arch_params, debug=args.debug)
+            exp = segmenter_model.Segmenter(data_params, arch_params, debug=args.debug)
 
             early_stopping_eps = 0.001
 

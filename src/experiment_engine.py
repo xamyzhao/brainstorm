@@ -15,7 +15,6 @@ from cnn_utils import ExperimentClassBase
 
 import json
 
-
 def configure_gpus(gpus):
     # set gpu id and tf settings
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([str(g) for g in gpus])

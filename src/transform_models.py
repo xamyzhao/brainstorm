@@ -372,14 +372,7 @@ class TransformModelTrainer(ExperimentClassBase.Experiment):
 
     def _create_flow_model(self):
         # parse the flow architecture name to create the correct model
-        if 'voxelmorph' in self.arch_params['model_arch']:
-            self.transform_model = networks.voxelmorph_wrapper(
-                img_shape=self.img_shape,
-                voxelmorph_arch='vm'
-            )
-            self.models += [self.transform_model]
-
-        elif 'bidir_separate' in self.arch_params['model_arch']:
+        if 'bidir_separate' in self.arch_params['model_arch']:
             # train a fwd model and back model
             nf_enc = [16, 32, 32, 32]
             nf_dec = [32, 32, 32, 32, 32, 16, 16]

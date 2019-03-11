@@ -1,14 +1,11 @@
 import sys
 
 import cv2
-import keras.backend as K
 import numpy as np
 import tensorflow as tf
 
-# TODO: move sampling functions elsewhere (VAE utils?)
-from keras import backend as K, Input, Model
-from keras.layers import Input, Lambda, MaxPooling2D, UpSampling2D, Reshape, MaxPooling3D, UpSampling3D, Conv2D, Conv3D, \
-    LeakyReLU, Activation
+from keras import backend as K
+from keras.layers import Input, Lambda, Reshape, MaxPooling3D, Conv2D, Conv3D, Activation
 from keras.engine import Layer
 from keras.models import Model
 
@@ -118,9 +115,9 @@ def randflow_model(img_shape,
         blur_sigma = int(np.ceil(blur_sigma / 4.))
         flow_shape = tuple([int(s/4) for s in img_shape[:-1]] + [n_dims])
     else:
-        #flow = flow_placeholder
         flow = x_in
         flow_shape = img_shape[:-1] + (n_dims,)
+
     # random flow field
     if flow_amp is None:
         flow = RandFlow(name='randflow', img_shape=flow_shape, blur_sigma=blur_sigma, flow_sigma=flow_sigma)(flow)
@@ -135,6 +132,7 @@ def randflow_model(img_shape,
         flow = Reshape(img_shape[:-1] + (n_dims,), name='randflow_out')(flow)
     else:
         flow = Reshape(img_shape[:-1] + (n_dims,), name='randflow_out')(flow)
+
     x_warped = SpatialTransformer(interp_method=interp_mode, name='densespatialtransformer_img', indexing=indexing)(
         [x_in, flow])
 
@@ -160,7 +158,6 @@ def randflow_ronneberger_model(img_shape,
     n_dims = len(img_shape) - 1
 
     x_in = Input(img_shape, name='img_input_randwarp')
-    #flow_placeholder = Input(img_shape[:-1] + (n_dims,), name='flow_input_placeholder')
 
     if n_dims == 3:
         n_pools = 5
@@ -193,24 +190,14 @@ def randflow_ronneberger_model(img_shape,
                 flow = BlurFlow(img_shape=tuple(flow_shape) + (n_dims,), blur_sigma=5,
                     )(flow)#min(7, flow_shape[0]/4.))(flow)
 
-        '''
-        flow = Lambda(interp_upsampling)(flow)
-        flow = Lambda(interp_upsampling)(flow)
-        flow = Lambda(interp_upsampling)(flow)
-        flow = Lambda(interp_upsampling)(flow)
-        flow = Lambda(interp_upsampling)(flow), output_shape=img_shape[:-1] + (n_dims,))(flow)
-        '''
         flow = basic_networks._pad_or_crop_to_shape(flow, flow_shape, img_shape)
-        print('Cropped flow shape {}'.format(flow.get_shape()))
-        #flow = UpSampling3D(2)(flow)
-        print(img_shape[:-1] + (n_dims,))
         flow = BlurFlow(img_shape[:-1] + (n_dims,), blur_sigma=3)(flow)
         flow = Reshape(img_shape[:-1] + (n_dims,), name='randflow_out')(flow)
-#		x_warped = Dense3DSpatialTransformer(interp_method=interp_mode, name='densespatialtransformer_img')([x_in, flow])
     else:
         flow = Reshape(img_shape[:-1] + (n_dims,), name='randflow_out')(flow)
-#		x_warped = Dense2DSpatialTransformer(interp_method=interp_mode, name='densespatialtransformer_img')([x_in, flow])
-    x_warped = SpatialTransformer(indexing=indexing, interp_method=interp_mode, name='densespatialtransformer_img')([x_in, flow])
+
+    x_warped = SpatialTransformer(
+        indexing=indexing, interp_method=interp_mode, name='densespatialtransformer_img')([x_in, flow])
 
     if model is not None:
         model_outputs = model(x_warped)
@@ -480,7 +467,7 @@ class DilateAndBlur(Layer):
         return blurred_errormap
 
 ##############################################################################
-# Spatial transform model wrappers
+# Spatial transform model wrapper
 ##############################################################################
 def bidir_wrapper(img_shape, fwd_model, bck_model, model_name='bidir_wrapper'):
     input_src = Input(img_shape)
@@ -493,46 +480,6 @@ def bidir_wrapper(img_shape, fwd_model, bck_model, model_name='bidir_wrapper'):
     return Model(inputs=[input_src, input_tgt], outputs=[transformed_fwd, transformed_bck, flow_fwd, flow_bck],
         name=model_name)
 
-
-def voxelmorph_wrapper(img_shape, voxelmorph_arch='vm2_guha'):
-    # just reverse the output order to be consistent with ours
-    from keras.models import Model
-    from keras.layers import Input, Lambda, Reshape
-
-    sys.path.append('../voxelmorph')
-
-    sys.path.append('../voxelmorph-sandbox')
-    import voxelmorph.networks as vms_networks
-
-    if 'diffeo' in voxelmorph_arch:
-        nf_dec = [32, 32, 32, 32, 16, 3]
-
-        vm_model = vms_networks.vmnet(
-            (160, 192, 224),
-            [16, 32, 32, 32],
-            nf_dec,
-            diffeo=True,
-            interp=False
-        )
-    else:
-        vm_model = vms_networks.vmnet(
-            vol_size=img_shape[:-1],
-            enc_nf=[16, 32, 32, 32],
-            dec_nf=[32, 32, 32, 32, 32, 16, 16, 3],
-        )
-
-    input_src = Input(img_shape)
-    input_tgt = Input(img_shape)
-
-    transformed, flow = vm_model([input_src, input_tgt])
-    flow = Lambda(lambda x: tf.gather(x, [1, 0, 2], axis=-1))(flow)
-    transformed = Reshape(img_shape, name='spatial_transformer')(transformed)
-    unet_flow = Model(
-        inputs=[input_src, input_tgt],
-        outputs=[flow, transformed],
-        name='{}_wrapper'.format(voxelmorph_arch)
-    )
-    return unet_flow
 
 ##############################################################################
 # Segmentation model
