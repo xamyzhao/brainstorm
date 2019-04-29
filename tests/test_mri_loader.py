@@ -1,71 +1,93 @@
+import os
+import sys
+# include external libraries in path
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ext', 'pytools-lib'))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'ext', 'neuron'))
+
 import numpy as np
 
-from src.mri_loader import _get_vol_files_list, MRIDataset, voxelmorph_labels, _load_vol_and_seg
+from src.mri_loader import get_dataset_files_list, MRIDataset, voxelmorph_labels, load_vol_and_seg
 
-
-def _test_get_vol_files_list():
+def test_get_vol_files_list():
     # test training set
-    train_files = _get_vol_files_list(mode='train', get_unnormalized=True, exclude_PPMI=True)
+    train_files = get_dataset_files_list(mode='train')
     assert np.all(['train' in tf for tf in train_files])
     assert np.all(['valid' not in tf for tf in train_files])
     assert np.all(['test' not in tf for tf in train_files])
-
-    # unnormalized should come from the origs folder
-    assert np.all(['origs' in tf for tf in train_files])
-    # check for no PPMI data
-    assert np.all(['PPMI' not in tf for tf in train_files])
-
     # test validation set
-    valid_files = _get_vol_files_list(mode='validate', get_unnormalized=False, exclude_PPMI=True)
+    valid_files = get_dataset_files_list(mode='validate')
     assert np.all(['train' not in tf for tf in valid_files])
-    assert np.all(['validate' in tf for tf in valid_files])
+    assert np.all(['valid' in tf for tf in valid_files])
     assert np.all(['test' not in tf for tf in valid_files])
 
-    # unnormalized should come from the origs folder
-    assert np.all(['origs' not in tf for tf in valid_files])
-    assert np.all(['vols' in tf for tf in valid_files])
-    # check for no PPMI data
-    assert np.all(['PPMI' not in tf for tf in valid_files])
     print('_get_vol_files_list unit tests PASSED')
 
 
-def _test_mrids_load_dataset():
+def test_load_dataset_unlabeled():
     ds = MRIDataset(params={
         'n_shot': 0,
-        'n_validation': 2,
-        'n_unlabeled': 5,
-        'load_vols': True,
-        'use_atlas_as_source': False,
-        'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
+        'n_validation': 1,
+        'n_unlabeled': 1,
+        'do_preload_vols': True,
+        'use_subjects_as_source': ['atlas'],
         'use_labels': voxelmorph_labels
     })
     ds.load_dataset(load_segs=True,
                     load_source_segs=True, load_source_contours=False)
 
     # check that we loaded the specified number of files
-    assert len(ds.files_unlabeled_train) == 5
-    assert len(ds.files_labeled_valid) == 2
+    assert len(ds.files_labeled_train) == 1
+    assert len(ds.files_unlabeled_train) == 1
+    assert len(ds.files_labeled_valid) == 1
 
-    # check a few files to make sure they are correct
-    check_train_idxs = [0, -1]
+    # manually load the files and see that they match what is in the dataset
+    check_train_idxs = [0]
     for ti in check_train_idxs:
-        vol, seg, contours = _load_vol_and_seg(
-            vol_file=ds.files_unlabeled_train[ti],
-            load_seg=True, do_mask_vol=False,
-            load_contours=False,
+        vol, seg, contours = load_vol_and_seg(
+            vol_file=ds.files_labeled_train[ti],
+            do_mask_vol=True,
             keep_labels=ds.label_mapping,
         )
-        diff = vol - ds.vols_unlabeled_train[ti]
+        diff = vol - np.reshape(ds.vols_labeled_train[ti], vol.shape)
         assert np.all(diff < np.finfo(np.float32).eps)
 
-    check_valid_idxs = [0, -1]
+    check_valid_idxs = [0]
     for ti in check_valid_idxs:
-        vol, seg, contours = _load_vol_and_seg(
+        vol, seg, contours = load_vol_and_seg(
             vol_file=ds.files_labeled_valid[ti],
-            do_mask_vol=False
+            do_mask_vol=True,
+            keep_labels=ds.label_mapping,
         )
-        diff = vol - ds.vols_labeled_valid[ti]
+        diff = vol - np.reshape(ds.vols_labeled_valid[ti], vol.shape)
         assert np.all(diff < np.finfo(np.float32).eps)
+
+    # make sure we are not mixing train and validation
+    assert np.all(['valid' not in tf for tf in ds.files_unlabeled_train])
+    assert np.all(['test' not in tf for tf in ds.files_unlabeled_train])
+
+    assert np.all(['train' not in tf for tf in ds.files_labeled_valid])
+    assert np.all(['test' not in tf for tf in ds.files_labeled_valid])
+    print('MRIDataset load_dataset unit tests PASSED')
+
+
+def test_load_dataset_labeled():
+    ds = MRIDataset(params={
+        'n_shot': 1,
+        'n_validation': 1,
+        'n_unlabeled': 0,
+        'do_preload_vols': True,
+        'use_subjects_as_source': ['atlas'],
+        'use_labels': voxelmorph_labels
+    })
+    ds.load_dataset(load_segs=True,
+                    load_source_segs=True, load_source_contours=False)
+
+    # check that we loaded the specified number of files
+    assert len(ds.files_labeled_train) == 2
+    assert len(ds.files_labeled_valid) == 1
+
+    # check that the training volumes are different
+    assert not np.all((ds.vols_labeled_train[1] - ds.vols_labeled_train[0]) < np.finfo(np.float32).eps)
 
     # make sure we are not mixing train and validation
     assert np.all(['valid' not in tf for tf in ds.files_unlabeled_train])
@@ -81,14 +103,12 @@ def _test_mrids_load_source_vol():
         'n_shot': 1,
         'n_validation': 1,
         'n_unlabeled': 1,
-        'unnormalized': True,
-        'load_vols': False,
-        'use_atlas_as_source': False,
-        'use_subject': 'OASIS_OAS1_0327_MR1_mri_talairach_orig',
+        'do_preload_vols': False,
+        'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
         'use_labels': voxelmorph_labels
     })
     ds._get_files_list()
-    ds._load_source_vol(load_source_segs=True, load_source_contours=True)
+    ds.load_dataset(load_source_segs=True, load_source_contours=True)
     # Y should consist of segmentation labels (channel 0) and contours (channel 1)
     assert ds.segs_labeled_train.shape[-1] == 2
     assert len(np.unique(ds.segs_labeled_train[..., 0])) == 31  # 30 voxelmorph labels plus bkg

@@ -7,23 +7,17 @@ import time
 
 import cv2
 import keras.metrics as keras_metrics
-import mri_loader
-import numpy as np
-import utils
 from keras.models import Model
 from keras.optimizers import Adam
+import numpy as np
 
-from src import networks
+from src import mri_loader, utils
+from src import networks, experiment_base
 
-sys.path.append('../evolving_wilds')
-from cnn_utils import batch_utils, classification_utils, file_utils, vis_utils
-from cnn_utils import ExperimentClassBase
-
-sys.path.append('../neuron')
-import neuron.layers as nrn_layers
+import ext.neuron.neuron.layers as nrn_layers
 
 
-class Segmenter(ExperimentClassBase.Experiment):
+class SegmenterTrainer(experiment_base.Experiment):
     def get_model_name(self):
         exp_name = 'FewShotSeg'
 
@@ -79,7 +73,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 
 
         self.model_name = exp_name
-        exp_name = super(Segmenter, self).get_model_name()
+        exp_name = super(SegmenterTrainer, self).get_model_name()
         self.model_name = exp_name
         return exp_name
 
@@ -90,16 +84,14 @@ class Segmenter(ExperimentClassBase.Experiment):
         self.arch_params = arch_params
         self.data_params = data_params
 
-        # i.e. are we segmenting slices or volumes
-        self.pred_img_shape = data_params['pred_img_shape']
+        # i.e. are we segmenting/augmenting slices or volumes
+        self.n_seg_dims = arch_params['n_seg_dims']
+        self.n_aug_dims = arch_params['n_aug_dims']
 
-        # i.e. are we warping slices or volumes
-        self.aug_img_shape = data_params['aug_img_shape']
+        self.pred_img_shape = data_params['img_shape'][:self.n_seg_dims] + (1,)
+        self.aug_img_shape = data_params['img_shape'][:self.n_aug_dims] + (1,)
 
-        self.n_pred_dims = len(self.pred_img_shape) - 1
-        self.n_aug_dims = len(self.aug_img_shape) - 1
         self.display_slice_idx = 112
-
 
         self.logger = None
         self.profiler_logger = None
@@ -176,8 +168,8 @@ class Segmenter(ExperimentClassBase.Experiment):
             validation_losses_buff_len = arch_params['patience']
         else:
             validation_losses_buff_len = 10
-        super(Segmenter, self).__init__(data_params, arch_params,
-                                        prompt_delete_existing=prompt_delete)
+        super(SegmenterTrainer, self).__init__(data_params, arch_params,
+                                               prompt_delete_existing=prompt_delete)
 
         self.validation_losses_buffer = [np.nan] * validation_losses_buff_len
 
@@ -274,7 +266,7 @@ class Segmenter(ExperimentClassBase.Experiment):
                     source_gen=self.source_gen, use_single_atlas=self.X_labeled_train.shape[0] == 1,
                     aug_by=aug_by,
                     convert_onehot=True, return_transforms=True,
-                    do_slice_z=(self.n_pred_dims == 2)  # if we are predicting on slices, then get slices
+                    do_slice_z=(self.n_seg_dims == 2)  # if we are predicting on slices, then get slices
             )
 
         # generates slices from the training volumes
@@ -306,7 +298,7 @@ class Segmenter(ExperimentClassBase.Experiment):
             self.X_valid_batch[ei] = self.X_labeled_valid[rand_subjs[ei], :, :, rand_slices[ei]]
             self.Y_valid_batch[ei] = self.segs_labeled_valid[rand_subjs[ei], :, :, rand_slices[ei]]
 
-        self.Y_valid_batch = classification_utils.labels_to_onehot(self.Y_valid_batch, label_mapping=self.label_mapping)
+        self.Y_valid_batch = utils.labels_to_onehot(self.Y_valid_batch, label_mapping=self.label_mapping)
 
 
     def _generate_slices_batchs_from_vols(self, vols, segs, ids, vol_gen=None,
@@ -315,7 +307,7 @@ class Segmenter(ExperimentClassBase.Experiment):
                                           convert_onehot=False,
                                           ):
         if vol_gen is None:
-            vol_gen = batch_utils.gen_batch(vols, [segs, ids],
+            vol_gen = utils.gen_batch(vols, [segs, ids],
                                             randomize=randomize,
                                             batch_size=vol_batch_size)
 
@@ -324,6 +316,7 @@ class Segmenter(ExperimentClassBase.Experiment):
 
             n_slices = X.shape[-2]
             slice_idxs = np.random.choice(n_slices, self.batch_size, replace=True)
+
             X_slices = np.reshape(
                 np.transpose(X[:, :, :, slice_idxs],
                              (0, 3, 1, 2, 4)), (-1,) + self.pred_img_shape)
@@ -337,7 +330,7 @@ class Segmenter(ExperimentClassBase.Experiment):
                                (-1,) + self.pred_img_shape[:-1] + (1,))
 
             if Y is not None and convert_onehot:
-                Y = classification_utils.labels_to_onehot(Y, label_mapping=self.label_mapping)
+                Y = utils.labels_to_onehot(Y, label_mapping=self.label_mapping)
 
             yield X_slices, Y, ids_batch
 
@@ -500,10 +493,10 @@ class Segmenter(ExperimentClassBase.Experiment):
             n_aug_batches = int(np.ceil(X_train_aug.shape[0] / float(print_batch_size)))
             aug_out_im = []
             for bi in range(min(20, n_aug_batches)):
-                aug_im = vis_utils.concatenate_with_pad([
-                    vis_utils.label_ims(
+                aug_im = utils.concatenate_with_pad([
+                    utils.label_ims(
                         X_train_aug[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :], []),
-                    vis_utils.label_ims(
+                    utils.label_ims(
                         Y_train_aug[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :], []),
                 ], axis=1)
                 aug_out_im.append(aug_im)
@@ -678,9 +671,9 @@ class Segmenter(ExperimentClassBase.Experiment):
             if convert_onehot and not ((aug_by == 'rand' or aug_by == 'tm') and self.arch_params['warpoh']):
                 # if we don't have onehot segs already, convert them after slicing
                 start = time.time()
-                Y_to_aug_slices = classification_utils.labels_to_onehot(
+                Y_to_aug_slices = utils.labels_to_onehot(
                     Y_to_aug_slices, label_mapping=self.label_mapping)
-                Y_aug = classification_utils.labels_to_onehot(
+                Y_aug = utils.labels_to_onehot(
                     Y_aug, label_mapping=self.label_mapping)
                 if self.do_profile:
                     self.profiler_logger.info('Converting onehot took {}'.format(time.time() - start))
@@ -691,18 +684,19 @@ class Segmenter(ExperimentClassBase.Experiment):
                 yield X_to_aug_slices, Y_to_aug_slices, X_aug, Y_aug, ul_ids
 
     def save_exp_info(self, exp_dir, figures_dir, models_dir, logs_dir):
-        super(Segmenter, self).save_exp_info(
+        super(SegmenterTrainer, self).save_exp_info(
             exp_dir, figures_dir, models_dir, logs_dir)
         self.dataset.logger = self.logger
 
 
     def save_models(self, epoch, iter_count=None):
-        super(Segmenter, self).save_models(epoch, iter_count=iter_count)
+        super(SegmenterTrainer, self).save_models(epoch, iter_count=iter_count)
 
 
     def create_models(self):
         from keras.models import Model
 
+        print('Creating segmenter model on pred shape {}'.format(self.pred_img_shape))
         self.base_segmenter_model = networks.segmenter_unet(
             img_shape=self.pred_img_shape,
             n_labels=self.n_labels,
@@ -721,19 +715,19 @@ class Segmenter(ExperimentClassBase.Experiment):
 
         self.models = [self.segmenter_model]
 
-        super(Segmenter, self).create_models()
+        super(SegmenterTrainer, self).create_models()
 
 
     def load_models(self, load_epoch=None, stop_on_missing=True, init_layers=False):
         if load_epoch == 'latest':
-            load_epoch = file_utils.get_latest_epoch_in_dir(self.models_dir)
+            load_epoch = utils.get_latest_epoch_in_dir(self.models_dir)
             self.logger.debug('Found latest epoch {} in dir {}'.format(load_epoch, self.models_dir))
 
         # do this first so we look for the correct (not pre-softmax) model
         if load_epoch is not None:
             self.update_epoch_count(int(load_epoch))
 
-        start_epoch = super(Segmenter, self).load_models(load_epoch)
+        start_epoch = super(SegmenterTrainer, self).load_models(load_epoch)
 
         return start_epoch
 
@@ -752,7 +746,7 @@ class Segmenter(ExperimentClassBase.Experiment):
             )
 
         self.loss_names = [self.loss_name]
-        super(Segmenter, self).compile_models()
+        super(SegmenterTrainer, self).compile_models()
 
 
     def make_train_results_im(self):
@@ -813,19 +807,19 @@ class Segmenter(ExperimentClassBase.Experiment):
 
         show_label_idx = 12 # cerebral wm
         out_im = np.concatenate([
-            vis_utils.label_ims(batch, labels[i], inverse_normalize=do_normalize[i]) if not is_seg[i] else
+            utils.label_ims(batch, labels[i]) if not is_seg[i] else
             np.concatenate([  # we want two images here: overlay and a single label
-                vis_utils.label_ims(np.transpose(
+                utils.label_ims(np.transpose(
                         utils.overlay_segs_on_ims_batch(
                             ims=np.transpose(overlay_on_ims[i], (1, 2, 3, 0)),
                             segs=np.transpose(
-                                classification_utils.onehot_to_labels(
+                                utils.onehot_to_labels(
                                     batch, label_mapping=self.label_mapping), (1, 2, 0)),
                             include_labels=self.label_mapping,
                             draw_contours=True,
                         ),
                         (3, 0, 1, 2)), []),
-                vis_utils.label_ims(batch[..., [show_label_idx]],
+                utils.label_ims(batch[..., [show_label_idx]],
                                     'label {}'.format(self.label_mapping[show_label_idx]), normalize=True)], axis=1) \
             for i, batch in enumerate(input_im_batches) if batch is not None
         ], axis=1)
@@ -874,8 +868,6 @@ class Segmenter(ExperimentClassBase.Experiment):
             self.X_train_batch, self.Y_train_batch)
         if not isinstance(segmenter_loss, list):
             segmenter_loss = [segmenter_loss]
->>>>>>> 064bf51361d30ec0466f1bc35d7fca1e60baa41e
-
 
         if self.do_profile:
             self.profiler_logger.info('train_on_batch took {}'.format(time.time() - start))

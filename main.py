@@ -1,10 +1,17 @@
 import argparse
 import json
 import os
+import sys
 
-import experiment_engine
 import numpy as np
 
+# external project dependencies
+sys.path.append(os.path.join(os.path.dirname(__file__), 'ext', 'neuron'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'ext', 'pytools-lib'))
+
+from src import experiment_engine, transform_models, segmenter_model
+
+# the labels used in the voxelmorph paper (https://github.com/voxelmorph/voxelmorph)
 voxelmorph_labels = [0,
                      16,  # brain stem
                      10, 49,  # thalamus (second entry)
@@ -26,114 +33,52 @@ voxelmorph_labels = [0,
 
 
 named_data_params = {
-    'mri-100-csts2-sup': {  # supervised experiment
-        'dataset_name': 'mri',
-        'source_name': 'centroidsubj2',
-        'target_name': 'subjs',
+    'mri-supervised': {  # supervised experiment
         'use_labels': voxelmorph_labels,
         'use_atlas_as_source': False,
-        'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
+        'use_subjects_as_source': [],
+        'do_load_test': False,
         'img_shape': (160, 192, 224, 1),
-        'pred_img_shape': (160, 192, 1),
-        'aug_img_shape': (160, 192, 224, 1),
         'n_shot': 100,  # in addition to source subjects above
         'n_unlabeled': 0,
         'n_validation': 50,
-        'load_vols': True,
+        'do_preload_vols': True,
         'aug_in_gen': True,
         'n_tm_aug': None,
         'n_flow_aug': None,
         'warp_labels': True,
     },
-    'mri-100-csts2': {
-        'dataset_name': 'mri',
-        'source_name': 'centroidsubj2',
-        'target_name': 'subjs',
+    'mri-100unlabeled': {
         'use_labels': voxelmorph_labels,
         'use_atlas_as_source': False,
-        'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
-        'exclude_from_validation_list': 'cvpr_test_files.txt',
+        'use_subjects_as_source': ['atlas'], #['OASIS_OAS1_0327_MR1_mri_talairach_orig'] was used in the paper
+        'do_load_test': False,
         'img_shape': (160, 192, 224, 1),
-        'pred_img_shape': (160, 192, 1),
-        'aug_img_shape': (160, 192, 224, 1),
+        'n_shot': 0,
         'n_unlabeled': 100,
         'n_validation': 50,
-        'load_vols': True,
+        'do_preload_vols': True,
         'aug_in_gen': True,
         'n_tm_aug': None,
         'n_flow_aug': None,
         'warp_labels': True,
     },
-    'mri-csts2-test': {
-        'dataset_name': 'mri',
-        'source_name': 'centroidsubj2',
-        'target_name': 'subjs',
+    'mri-100unlabeled-test': {
         'use_labels': voxelmorph_labels,
-        'final_test': True,
+        'do_load_test': True,
+        'n_shot': 0,
         'n_unlabeled': 1,
         'n_validation': 1,
         'n_test': 200,
         'test_seed': 17,
         'use_atlas_as_source': False,
-        'use_subjects_as_source': ['OASIS_OAS1_0327_MR1_mri_talairach_orig'],
+        'use_subjects_as_source': ['atlas'],
         'img_shape': (160, 192, 224, 1),
-        'pred_img_shape': (160, 192, 1),
-        'aug_img_shape': (160, 192, 224, 1),
-        'load_vols': True,
+        'do_preload_vols': True,
         'aug_in_gen': True,
         'n_vte_aug': None,
         'n_flow_aug': None,
         'warp_labels': True,
-    },
-    'mri-100-bts': {  # buckner centroid to subjects
-        'dataset_name': 'mri',
-        'source_name': 'bucknercentroid',
-        'target_name': 'subjs',
-        'use_labels': voxelmorph_labels,
-        'exclude_from_valid_list': 'mri-100-bts-valid.txt',
-        'use_atlas_as_source': False,
-        'use_subjects_as_source': [
-            '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990104_vc700.npz',
-            ],
-        'img_shape': (160, 192, 224, 1),
-        'pred_img_shape': (160, 192, 1),
-        'aug_img_shape': (160, 192, 224, 1),
-        'n_unlabeled': 100,
-        'n_validation': 50,
-        'load_vols': True,
-        'aug_in_gen': True,
-        'n_tm_aug': None,
-        'n_flow_aug': None,
-        'warp_labels': True,
-        'n_dims': 3,  # TODO: deprecate?
-    },
-    'buckner-test': {
-        'dataset_name': 'mri',
-        'source_name': 'bucknercentroid',
-        'target_name': 'subjs',
-        'dataset_root_train': 'vm',
-        'dataset_root_valid': 'buckner',
-        'final_test': False,
-        'n_test': 0,
-        'unnormalized': True,
-        'masked': True,
-        'n_shot': 0,
-        'use_atlas_as_source': False,
-        'use_subjects_as_source': [
-            '/data/ddmg/voxelmorph/data/buckner/proc/resize256-crop_x32/FromEugenio_prep2/origs/990104_vc700.npz',
-            ],
-        'img_shape': (160, 192, 224, 1),
-        'pred_img_shape': (160, 192, 1),
-        'aug_img_shape': (160, 192, 224, 1),
-        'n_unlabeled': 1,
-        'n_validation': 40,
-        'load_vols': True,
-        'aug_in_gen': True,
-        'n_tm_aug': None,
-        'n_flow_aug': None,
-        'use_labels': voxelmorph_labels,
-        'warp_labels': True,
-        'n_dims': 3,  # TODO: deprecate?
     },
 }
 
@@ -145,12 +90,11 @@ if __name__ == '__main__':
     # common params
     ap.add_argument('exp_type', nargs='*', type=str, help='trans (transform model), fss (few-shot segmentation)')
     ap.add_argument('-g', '--gpu', nargs='*', type=int, help='gpu id(s) to use', default=1)
-    ap.add_argument('-b', '--batch_size', nargs='?', type=int, default=64)
+    ap.add_argument('-b', '--batch_size', nargs='?', type=int, default=16)
     ap.add_argument('-d', '--data', nargs='?', type=str, help='name of dataset', default=None)
 
     ap.add_argument('-m', '--model', type=str, help='model architecture', default=None)
     ap.add_argument('--epoch', nargs='?', help='epoch number or "latest"', default=None)
-
 
 
     ap.add_argument('--lr', nargs='?', type=float, help='Learning rate', default=1e-4)
@@ -159,9 +103,6 @@ if __name__ == '__main__':
     ap.add_argument('--loadn', type=int, help='Number of volumes to load (instead of full dataset)', default=None)
     ap.add_argument('--print_every', nargs='?', type=int,
                     help='Number of seconds between printing training batches as images. Useful when debugging', default=120)
-
-    ap.add_argument('--early', action='store_true', help='Simply run eval function', default=False,
-                    dest='early_stopping')
 
     ap.add_argument('--from_dir', nargs='?', default=None, help='Load experiment from dir instead of by params')
 
@@ -173,20 +114,7 @@ if __name__ == '__main__':
     ap.add_argument('--init_weights', action='store_true', default=False,
                     help='Load as many models as we can, and give up on any we cannot find')
 
-    # training params
-    ap.add_argument('--train.patience', nargs='?', type=int, default=20,
-                    help='Number of epochs to wait to see if validation loss goes down', dest='train_patience')
-
-    # augmentation params
-    ap.add_argument('--aug.flow_amp', nargs='?', type=int, default=None,
-                    dest='aug_rand_flow_amp',
-                    help='Uniform amplitude of random flow field to start with')
-    ap.add_argument('--aug.flow_sigma', nargs='?', type=int, default=None,
-                    help='Amount to blur random flow field', dest='aug_rand_blur_sigma')
-    ap.add_argument('--aug.n_aug', nargs='?', type=int, default=None,
-                    help='Number of new augmented examples to add', dest='data_n_aug')
-
-    # few-shot segmentation params
+    # one-shot segmentation params
     ap.add_argument('--aug_sas', action='store_true', default=False,
                     help='do aug with the flow model in arch_params')
     ap.add_argument('--aug_rand', action='store_true', default=False,
@@ -196,6 +124,15 @@ if __name__ == '__main__':
 
     ap.add_argument('--coupled', action='store_true', default=False,
                     help='coupled sampling of targets for transform models and fss')
+
+    # augmentation params
+    ap.add_argument('--aug.flow_amp', nargs='?', type=int, default=None,
+                    dest='aug_rand_flow_amp',
+                    help='Uniform amplitude of random flow field to start with')
+    ap.add_argument('--aug.flow_sigma', nargs='?', type=int, default=None,
+                    help='Amount to blur random flow field', dest='aug_rand_blur_sigma')
+    ap.add_argument('--aug.n_aug', nargs='?', type=int, default=None,
+                    help='Number of new augmented examples to add', dest='data_n_aug')
 
     args = ap.parse_args()
     experiment_engine.configure_gpus(args.gpu)
@@ -228,7 +165,7 @@ if __name__ == '__main__':
             save_every_n_epochs = 10
 
             named_arch_params = {
-                'flow-bds': {
+                'flow-bidir': {
                     'model_arch': 'flow_bidir_separate',
                     'save_every' : 10,
                     'test_every': 25,
@@ -236,10 +173,6 @@ if __name__ == '__main__':
                     'recon_loss_Iw': 'cc_vm',
                     'cc_loss_weight': 1, 'cc_win_size_Iw': 9,
                     'end_epoch': 500,
-                    'init_weights_from': [
-                        'experiments/voxelmorph/vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5',
-                        'experiments/voxelmorph/vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5',
-                    ],
                 },
                 'color-unet': {
                     'model_arch': 'color_unet',
@@ -251,11 +184,11 @@ if __name__ == '__main__':
                         'voxelmorph/vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'),
                     'transform_reg_color': 'grad-seg-l2', 'transform_reg_lambda_color': 1,
                     'color_transform_in_tgt_space': False,
-                    'include_aux_input': False,
+                    'do_include_aux_input': False,
                     'recon_loss_I': 'l2-tgt',
                     'recon_loss_wt': 50,
                     'end_epoch': 20,
-                    'do_aux_reg': 'contours',
+                    'use_aux_reg': 'contours',
                 },
             }
 
@@ -270,7 +203,7 @@ if __name__ == '__main__':
                 with open(os.path.join(args.from_dir, 'data_params.json'), 'r') as f:
                     data_params = json.load(f)
             else:
-                arch_params = named_arch_params['default']
+                raise IOError('Must specify a transform model to train!')
 
             # load flow and color architecture params independently
             if args.flow_from_dir:
@@ -296,30 +229,28 @@ if __name__ == '__main__':
 
             end_epoch = arch_params['end_epoch']
             tm_end_epoch = end_epoch
-        elif exp_type.lower() == 'fss':
+        elif exp_type.lower() == 'seg':
             '''''''''''''''''''''''''''
-            Few shot segmentation
+            One-shot segmentation (with optional augmentation)
             '''''''''''''''''''''''''''
-            from src import segmenter_model, transform_models
-
             named_arch_params = {
                 'default': {
                     'nf_enc': [32, 32, 64, 64, 128, 128],
                     'n_convs_per_stage': 2,
-                    'use_maxpool': True,
-                    'use_residuals': False,
+                    'n_seg_dims': 2, # segment slices (2D)
+                    'n_aug_dims': 3, # augment each volume (3D)
                     'end_epoch': 100000,
                     'pretrain_l2': 500,
                     'warpoh': False,
-                    'tm_flow_model': (
+                    'tm_flow_model': ( # transform model (spatial) for augmentation
                         'experiments/voxelmorph/'
                         'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
                     ),
-                    'tm_flow_bck_model': (
+                    'tm_flow_bck_model': ( # transform model (spatial) for augmentation
                         'experiments/voxelmorph/'
                         'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
                     ),
-                    'tm_color_model': (
+                    'tm_color_model': ( # transform model (appearance) for augmentation
                         'experiments/'
                         'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_grad-seg-l2_regcwt1_l2-tgt-wt50_1'
                     '/models/color_delta_unet_epoch10_iter1000.h5'),
@@ -342,25 +273,12 @@ if __name__ == '__main__':
 
             arch_params['lr'] = args.lr
 
-            flow_aug_params = {
-                'mri-100-csts2': {
-                    'aug_params': {
-                        'randflow_type': None,
-                        'flow_sigma': None,
-                        'flow_amp': 200,
-                        'blur_sigma': 12,
-                        'mult_amp': 0.5,
-                    }
-                },
-                'mri-100-bts': {
-                    'aug_params': {
-                        'randflow_type': None,
-                        'flow_sigma': None,
-                        'flow_amp': 200,
-                        'blur_sigma': 12,
-                        'mult_amp': 0.4,
-                    }
-                }
+            rand_aug_params = {
+                'randflow_type': None,
+                'flow_sigma': None,
+                'flow_amp': 200,
+                'blur_sigma': 12,
+                'mult_amp': 0.5,
             }
 
             if args.from_dir:
@@ -375,9 +293,8 @@ if __name__ == '__main__':
             data_params['aug_randmult'] = False
 
             if args.aug_rand:
-                data_params['load_vols'] = False
-                for k, v in flow_aug_params[args.data].items():
-                    data_params[k] = v
+                data_params['do_preload_vols'] = False
+                data_params['aug_params'] = rand_aug_params
                 data_params['aug_rand'] = args.aug_rand
 
                 if args.aug_rand_flow_amp is not None:    
@@ -387,10 +304,10 @@ if __name__ == '__main__':
 
             if args.aug_tm:
                 data_params['aug_tm'] = True
-                data_params['load_vols'] = False
+                data_params['do_preload_vols'] = False
 
             elif args.aug_sas:
-                data_params['load_vols'] = False
+                data_params['do_preload_vols'] = False
                 data_params['aug_sas'] = True
                 data_params['n_sas_aug'] = data_params['n_unlabeled']
                 data_params['aug_in_gen'] = False
@@ -408,11 +325,7 @@ if __name__ == '__main__':
             else:
                 arch_params['do_coupled_sampling'] = False
 
-
-
-            exp = segmenter_model.Segmenter(data_params, arch_params, debug=args.debug)
-
-            early_stopping_eps = 0.001
+            exp = segmenter_model.SegmenterTrainer(data_params, arch_params, debug=args.debug)
 
             end_epoch = arch_params['end_epoch']
             tm_end_epoch = end_epoch

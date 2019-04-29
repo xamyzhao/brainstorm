@@ -1,4 +1,3 @@
-import functools
 import logging
 import os
 import sys
@@ -10,8 +9,7 @@ import numpy as np
 import tensorflow as tf
 from keras.utils import generic_utils
 
-sys.path.append('../evolving_wilds')
-from cnn_utils import ExperimentClassBase
+from src import experiment_base
 
 import json
 
@@ -27,7 +25,7 @@ def configure_gpus(gpus):
 # loads a saved experiment using the saved parameters.
 # runs all initialization steps so that we can use the models right away
 def load_experiment_from_dir(from_dir,
-                             exp_class: ExperimentClassBase,
+                             exp_class: experiment_base.Experiment,
                              load_n=None,
                              load_epoch=None,
                              log_to_dir=False,  # dont log if we are just loading this exp for evaluation
@@ -41,7 +39,7 @@ def load_experiment_from_dir(from_dir,
 
     exp = exp_class(
         data_params=fromdir_data_params, arch_params=fromdir_arch_params,
-        prompt_delete=False, prompt_rename=True, # in case the experiment was renamed
+        prompt_delete_existing=False, prompt_update_name=True, # in case the experiment was renamed
         log_to_dir=log_to_dir)
 
     exp.load_data(load_n=load_n)
@@ -148,7 +146,7 @@ def train_batch_by_batch(
 ):
     max_n_batch_per_epoch = 1000  # limits each epoch to batch_size * 1000 examples. i think this is ok.
     n_batch_per_epoch_train = min(max_n_batch_per_epoch, int(np.ceil(exp.get_n_train() / float(batch_size))))
-
+    print(exp.get_n_train())
     max_printed_examples = 8
     print_every = 100000  # set this to be really high at  first
     print_atleast_every = 100
@@ -221,7 +219,7 @@ def train_batch_by_batch(
                     results_im)
                 printed_count += 1
 
-        if batch_count >= 10:  # TODO: make this only print once?
+        if batch_count >= 10:
             file_stdout_logger.debug('Printing every {} batches, '
                                      'saving every {} and {} epochs, '
                                      'testing every {}'.format(print_every,
@@ -263,13 +261,6 @@ def train_batch_by_batch(
                                      test_loss_names, test_loss,
                                      e * n_batch_per_epoch_train + bi)
 
-            if run_args.early_stopping:
-                if not np.any(np.isnan(exp.validation_losses_buffer)) \
-                        and len(exp.validation_losses_buffer) > 0 \
-                        and np.all(exp.validation_losses_buffer[1:] - exp.validation_losses_buffer[
-                            0] < early_stopping_eps):
-                    file_stdout_logger.debug('Validation losses {}, stopping!'.format(exp.validation_losses_buffer))
-                    sys.exit()
             print('\n\n')
 
 

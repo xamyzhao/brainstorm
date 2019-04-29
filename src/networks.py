@@ -1,22 +1,237 @@
+import os
 import sys
 
-import cv2
 import numpy as np
 import tensorflow as tf
 
 from keras import backend as K
-from keras.layers import Input, Lambda, Reshape, MaxPooling3D, Conv2D, Conv3D, Activation
+from keras.layers.advanced_activations import LeakyReLU
+from keras.layers import Input, Lambda, Reshape, Activation
+from keras.layers import Conv2D, Cropping2D, MaxPooling2D, UpSampling2D, ZeroPadding2D
+from keras.layers import Conv3D, Cropping3D, MaxPooling3D, UpSampling3D, ZeroPadding3D
+
 from keras.engine import Layer
 from keras.models import Model
 
-sys.path.append('../evolving_wilds')
-from cnn_utils import basic_networks, image_utils
-
-sys.path.append('../neuron')
-from neuron.utils import volshape_to_ndgrid
-from neuron.layers import SpatialTransformer
+from ext.neuron.neuron.utils import volshape_to_ndgrid
+from ext.neuron.neuron.layers import SpatialTransformer
 
 from keras.layers import Add, Concatenate
+
+##############################################################################
+# Basic networks
+##############################################################################
+
+
+def unet2D(x_in,
+           img_shape, out_im_chans,
+           nf_enc=[64, 64, 128, 128, 256, 256, 512],
+           nf_dec=None,
+           layer_prefix='unet',
+           n_convs_per_stage=1,
+        ):
+    ks = 3
+    x = x_in
+
+    encodings = []
+    encoding_vol_sizes = []
+    for i in range(len(nf_enc)):
+        for j in range(n_convs_per_stage):
+            x = Conv2D(
+                nf_enc[i],
+                kernel_size=ks,
+                strides=(1, 1), padding='same',
+                name='{}_enc_conv2D_{}_{}'.format(layer_prefix, i, j + 1))(x)
+            x = LeakyReLU(0.2)(x)
+
+        encodings.append(x)
+        encoding_vol_sizes.append(np.asarray(x.get_shape().as_list()[1:-1]))
+
+        if i < len(nf_enc) - 1:
+            x = MaxPooling2D(pool_size=(2, 2), padding='same', name='{}_enc_maxpool_{}'.format(layer_prefix, i))(x)
+
+    if nf_dec is None:
+        nf_dec = list(reversed(nf_enc[1:]))
+
+    for i in range(len(nf_dec)):
+        curr_shape = x.get_shape().as_list()[1:-1]
+
+        # only do upsample if we are not yet at max resolution
+        if np.any(curr_shape < list(img_shape[:len(curr_shape)])):
+            x = UpSampling2D(size=(2, 2), name='{}_dec_upsamp_{}'.format(layer_prefix, i))(x)
+
+        # just concatenate the final layer here
+        if i <= len(encodings) - 2:
+            x = _pad_or_crop_to_shape_2D(x, np.asarray(x.get_shape().as_list()[1:-1]), encoding_vol_sizes[-i-2])
+            x = Concatenate(axis=-1)([x, encodings[-i-2]])
+
+        for j in range(n_convs_per_stage):
+            x = Conv2D(nf_dec[i],
+                       kernel_size=ks, padding='same',
+                       name='{}_dec_conv2D_{}_{}'.format(layer_prefix, i, j))(x)
+            x = LeakyReLU(0.2)(x)
+
+
+    y = Conv2D(out_im_chans, kernel_size=1, padding='same',
+               name='{}_dec_conv2D_final'.format(layer_prefix))(x)  # add your own activation after this model
+
+    # add your own activation after this model
+    return y
+
+
+def unet3D(x_in,
+           img_shape, out_im_chans,
+           nf_enc=[64, 64, 128, 128, 256, 256, 512],
+           nf_dec=None,
+           layer_prefix='unet',
+           n_convs_per_stage=1,
+        ):
+    ks = 3
+    x = x_in
+
+    encodings = []
+    encoding_vol_sizes = []
+    for i in range(len(nf_enc)):
+        for j in range(n_convs_per_stage):
+            x = Conv3D(
+                nf_enc[i],
+                kernel_size=ks,
+                strides=(1, 1, 1), padding='same',
+                name='{}_enc_conv3D_{}_{}'.format(layer_prefix, i, j + 1))(x)
+            x = LeakyReLU(0.2)(x)
+
+        encodings.append(x)
+        encoding_vol_sizes.append(np.asarray(x.get_shape().as_list()[1:-1]))
+
+        if i < len(nf_enc) - 1:
+            x = MaxPooling3D(pool_size=(2, 2, 2), padding='same', name='{}_enc_maxpool_{}'.format(layer_prefix, i))(x)
+
+    if nf_dec is None:
+        nf_dec = list(reversed(nf_enc[1:]))
+
+    for i in range(len(nf_dec)):
+        curr_shape = x.get_shape().as_list()[1:-1]
+
+        # only do upsample if we are not yet at max resolution
+        if np.any(curr_shape < list(img_shape[:len(curr_shape)])):
+            us = (2, 2, 2)
+            x = UpSampling3D(size=us, name='{}_dec_upsamp_{}'.format(layer_prefix, i))(x)
+
+        # just concatenate the final layer here
+        if i <= len(encodings) - 2:
+            x = _pad_or_crop_to_shape_3D(x, np.asarray(x.get_shape().as_list()[1:-1]), encoding_vol_sizes[-i-2])
+            x = Concatenate(axis=-1)([x, encodings[-i-2]])
+
+        for j in range(n_convs_per_stage):
+            x = Conv3D(nf_dec[i],
+                       kernel_size=ks, strides=(1, 1, 1), padding='same',
+                       name='{}_dec_conv3D_{}_{}'.format(layer_prefix, i, j))(x)
+            x = LeakyReLU(0.2)(x)
+
+
+    y = Conv3D(out_im_chans, kernel_size=1, padding='same',
+               name='{}_dec_conv3D_final'.format(layer_prefix))(x)  # add your own activation after this model
+
+    # add your own activation after this model
+    return y
+
+
+def _pad_or_crop_to_shape_2D(x, in_shape, tgt_shape):
+    '''
+    in_shape, tgt_shape are both 2x1 numpy arrays
+    '''
+    in_shape = np.asarray(in_shape)
+    tgt_shape = np.asarray(tgt_shape)
+    print('Padding input from {} to {}'.format(in_shape, tgt_shape))
+    im_diff = in_shape - tgt_shape
+    if im_diff[0] < 0:
+        pad_amt = (int(np.ceil(abs(im_diff[0]) / 2.0)), int(np.floor(abs(im_diff[0]) / 2.0)))
+        x = ZeroPadding2D((pad_amt, (0, 0)))(x)
+    if im_diff[1] < 0:
+        pad_amt = (int(np.ceil(abs(im_diff[1]) / 2.0)), int(np.floor(abs(im_diff[1]) / 2.0)))
+        x = ZeroPadding2D(((0, 0), pad_amt))(x)
+
+    if im_diff[0] > 0:
+        crop_amt = (int(np.ceil(im_diff[0] / 2.0)), int(np.floor(im_diff[0] / 2.0)))
+        x = Cropping2D((crop_amt, (0, 0)))(x)
+    if im_diff[1] > 0:
+        crop_amt = (int(np.ceil(im_diff[1] / 2.0)), int(np.floor(im_diff[1] / 2.0)))
+        x = Cropping2D(((0, 0), crop_amt))(x)
+    return x
+
+
+def _pad_or_crop_to_shape_3D(x, in_shape, tgt_shape):
+    '''
+    in_shape, tgt_shape are both 2x1 numpy arrays
+    '''
+    im_diff = np.asarray(in_shape[:3]) - np.asarray(tgt_shape[:3])
+
+    if im_diff[0] < 0:
+        pad_amt = (int(np.ceil(abs(im_diff[0]) / 2.0)), int(np.floor(abs(im_diff[0]) / 2.0)))
+        x = ZeroPadding3D((
+            pad_amt,
+            (0, 0),
+            (0, 0)
+        ))(x)
+    if im_diff[1] < 0:
+        pad_amt = (int(np.ceil(abs(im_diff[1]) / 2.0)), int(np.floor(abs(im_diff[1]) / 2.0)))
+        x = ZeroPadding3D(((0, 0), pad_amt, (0, 0)))(x)
+    if im_diff[2] < 0:
+        pad_amt = (int(np.ceil(abs(im_diff[2]) / 2.0)), int(np.floor(abs(im_diff[2]) / 2.0)))
+        x = ZeroPadding3D(((0, 0), (0, 0), pad_amt))(x)
+
+    if im_diff[0] > 0:
+        crop_amt = (int(np.ceil(im_diff[0] / 2.0)), int(np.floor(im_diff[0] / 2.0)))
+        x = Cropping3D((crop_amt, (0, 0), (0, 0)))(x)
+    if im_diff[1] > 0:
+        crop_amt = (int(np.ceil(im_diff[1] / 2.0)), int(np.floor(im_diff[1] / 2.0)))
+        x = Cropping3D(((0, 0), crop_amt, (0, 0)))(x)
+    if im_diff[2] > 0:
+        crop_amt = (int(np.ceil(im_diff[2] / 2.0)), int(np.floor(im_diff[2] / 2.0)))
+        x = Cropping3D(((0, 0), (0, 0), crop_amt))(x)
+    return x
+
+##############################################################################
+# Spatial transform model
+##############################################################################
+def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
+    """
+    From https://github.com/voxelmorph/voxelmorph.
+
+    unet architecture for voxelmorph models presented in the CVPR 2018 paper.
+    You may need to modify this code (e.g., number of layers) to suit your project needs.
+
+    :param vol_size: volume size. e.g. (256, 256, 256)
+    :param enc_nf: list of encoder filters. right now it needs to be 1x4.
+           e.g. [16,32,32,32]
+    :param dec_nf: list of decoder filters. right now it must be 1x6 (like voxelmorph-1) or 1x7 (voxelmorph-2)
+    :return: the keras model
+    """
+    import keras.layers as KL
+    from keras.initializers import RandomNormal
+
+    ndims = len(vol_size)
+    assert ndims==3, "ndims should be 3. found: %d" % ndims
+
+    src = Input(vol_size + (1,), name='input_src')
+    tgt = Input(vol_size + (1,), name='input_tgt')
+
+    input_stack = Concatenate(name='concat_inputs')([src, tgt])
+
+    # get the core model
+    x = unet3D(input_stack, img_shape=vol_size, out_im_chans=ndims, nf_enc=enc_nf, nf_dec=dec_nf)
+
+    # transform the results into a flow field.
+    Conv = getattr(KL, 'Conv%dD' % ndims)
+    flow = Conv(ndims, kernel_size=3, padding='same', name='flow',
+                  kernel_initializer=RandomNormal(mean=0.0, stddev=1e-5))(x)
+
+    # warp the source with the flow
+    y = SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
+    # prepare model
+    model = Model(inputs=[src, tgt], outputs=[y, flow])
+    return model
+
 
 ##############################################################################
 # Appearance transform model
@@ -53,18 +268,18 @@ def color_delta_unet_model(img_shape,
     n_dims = len(img_shape) - 1
 
     if n_dims == 2:
-        color_delta = basic_networks.unet2D(x_stacked, unet_input_shape, n_output_chans,
-                                       nf_enc=enc_params['nf_enc'],
-                                        nf_dec=enc_params['nf_dec'],
-                                       n_convs_per_stage=enc_params['n_convs_per_stage'],
-                                       include_residual=False)
+        color_delta = unet2D(x_stacked, unet_input_shape, n_output_chans,
+                             nf_enc=enc_params['nf_enc'],
+                             nf_dec=enc_params['nf_dec'],
+                             n_convs_per_stage=enc_params['n_convs_per_stage'],
+                             )
         conv_fn = Conv2D
     else:
-        color_delta = basic_networks.unet3D(x_stacked, unet_input_shape, n_output_chans,
-                                       nf_enc=enc_params['nf_enc'],
-                                        nf_dec=enc_params['nf_dec'],
-                                       n_convs_per_stage=enc_params['n_convs_per_stage'],
-                                       include_residual=False)
+        color_delta = unet3D(x_stacked, unet_input_shape, n_output_chans,
+                             nf_enc=enc_params['nf_enc'],
+                             nf_dec=enc_params['nf_dec'],
+                             n_convs_per_stage=enc_params['n_convs_per_stage'],
+                             )
         conv_fn = Conv3D
 
     # last conv to get the output shape that we want
@@ -79,6 +294,7 @@ def color_delta_unet_model(img_shape,
 
     return Model(inputs=inputs, outputs=[color_delta, transformed_out, x_seg], name=model_name)
 
+
 ##############################################################################
 # Model for warping volumes/segmentations on the GPU
 ##############################################################################
@@ -92,10 +308,10 @@ def warp_model(img_shape, interp_mode='linear', indexing='ij'):
 
     return Model(inputs=[img_in, flow_in], outputs=img_warped, name='warp_model')
 
+
 ##############################################################################
 # Models and utils for generating random flow fields on the GPU
 ##############################################################################
-
 def randflow_model(img_shape,
                    model,
                    model_name='randflow_model',
@@ -146,69 +362,6 @@ def randflow_model(img_shape,
     return Model(inputs=[x_in], outputs=model_outputs, name=model_name)
 
 
-def randflow_ronneberger_model(img_shape,
-                   model,
-                   model_name='randflow_ronneberger_model',
-                   flow_sigma=None,
-                   flow_amp=None,
-                   blur_sigma=5,
-                   interp_mode='linear',
-                    indexing='xy',
-                   ):
-    n_dims = len(img_shape) - 1
-
-    x_in = Input(img_shape, name='img_input_randwarp')
-
-    if n_dims == 3:
-        n_pools = 5
-
-        flow = MaxPooling3D(2)(x_in)
-        for i in range(n_pools-1):
-            flow = MaxPooling3D(2)(flow)
-        # reduce flow by a factor of 64 until we have roughly 3x3x3
-        flow_shape = tuple([int(s/(2**n_pools)) for s in img_shape[:-1]] + [n_dims])
-        print('Smallest flow shape: {}'.format(flow_shape))
-    else:
-        #flow = flow_placeholder
-        flow = x_in
-        flow_shape = img_shape[:-1] + (n_dims,)
-    # random flow field
-    if flow_amp is None:
-        # sigmas and blurring are hand-tuned to be similar to gaussian with stddev = 10, with smooth upsampling
-        flow = RandFlow(name='randflow', img_shape=flow_shape, blur_sigma=0., flow_sigma=flow_sigma * 8)(flow)
-
-    if n_dims == 3:
-        print(flow_shape)
-        print(flow.get_shape())
-        flow = Reshape(flow_shape)(flow)
-        flow_shape = flow_shape[:-1]
-        for i in range(n_pools):
-            flow_shape = [fs * 2 for fs in flow_shape]
-            flow = Lambda(interp_upsampling, output_shape=tuple(flow_shape) + (n_dims,))(flow)
-            if i > 0 and i < 4:
-                print(flow_shape)
-                flow = BlurFlow(img_shape=tuple(flow_shape) + (n_dims,), blur_sigma=5,
-                    )(flow)#min(7, flow_shape[0]/4.))(flow)
-
-        flow = basic_networks._pad_or_crop_to_shape(flow, flow_shape, img_shape)
-        flow = BlurFlow(img_shape[:-1] + (n_dims,), blur_sigma=3)(flow)
-        flow = Reshape(img_shape[:-1] + (n_dims,), name='randflow_out')(flow)
-    else:
-        flow = Reshape(img_shape[:-1] + (n_dims,), name='randflow_out')(flow)
-
-    x_warped = SpatialTransformer(
-        indexing=indexing, interp_method=interp_mode, name='densespatialtransformer_img')([x_in, flow])
-
-    if model is not None:
-        model_outputs = model(x_warped)
-        if not isinstance(model_outputs, list):
-            model_outputs = [model_outputs]
-    else:
-        model_outputs = [x_warped, flow]
-    return Model(inputs=[x_in], outputs=model_outputs, name=model_name)
-
-
-
 def interp_upsampling(V):
     """
     upsample a field by a factor of 2
@@ -224,6 +377,19 @@ def interp_upsampling(V):
     return V
 
 
+def create_gaussian_kernel(sigma, n_sigmas_per_side=8, n_dims=2):
+    t = np.linspace(-sigma * n_sigmas_per_side / 2, sigma * n_sigmas_per_side / 2, int(sigma * n_sigmas_per_side + 1))
+    gauss_kernel_1d = np.exp(-0.5 * (t / sigma) ** 2)
+
+    if n_dims == 2:
+        gauss_kernel_2d = gauss_kernel_1d[:, np.newaxis] * gauss_kernel_1d[np.newaxis, :]
+    else:
+        gauss_kernel_2d = gauss_kernel_1d[:, np.newaxis, np.newaxis] * gauss_kernel_1d[np.newaxis, np.newaxis,
+                                                                       :] * gauss_kernel_1d[np.newaxis, :, np.newaxis]
+    gauss_kernel_2d = gauss_kernel_2d / np.sum(gauss_kernel_2d)
+    return gauss_kernel_2d
+
+
 class UpsampleInterp(Layer):
     def __init__(self, **kwargs):
         super(UpsampleInterp, self).__init__(**kwargs)
@@ -237,49 +403,6 @@ class UpsampleInterp(Layer):
         return tuple([input_shape[0]] + [int(s * 2) for s in input_shape[1:]] )
 
 
-class Blur_Downsample(Layer):
-    def __init__(self, n_chans, n_dims, do_blur=True, **kwargs):
-        super(Blur_Downsample, self).__init__(**kwargs)
-        scale_factor = 0.5 # we only support halving right now
-
-        if do_blur:
-            # according to scikit-image.transform.rescale documentation
-            blur_sigma = (1. - scale_factor) / 2
-
-            blur_kernel = image_utils.create_gaussian_kernel(blur_sigma, n_dims=n_dims, n_sigmas_per_side=4)
-            if n_dims==2:
-                blur_kernel = np.tile(np.reshape(blur_kernel, blur_kernel.shape + (1,1)), tuple([1]*n_dims) + (n_dims, 1))
-            else:
-                blur_kernel = np.reshape(blur_kernel, blur_kernel.shape + (1,1))
-            self.blur_kernel = tf.constant(blur_kernel, dtype=tf.float32)
-        else:
-            self.blur_kernel = tf.constant(np.ones([1] * n_dims + [1, 1]), dtype=tf.float32)
-        self.n_dims = n_dims
-        self.n_chans = n_chans
-
-    def build(self, input_shape):
-        self.built = True
-
-    def call(self, inputs):
-        if self.n_dims == 2:
-            blurred = tf.nn.depthwise_conv2d(inputs, self.blur_kernel,
-                                               padding='SAME', strides=[1, 2, 2, 1])
-        elif self.n_dims == 3:
-            chans_list = tf.unstack(inputs, num=self.n_chans, axis=-1)
-            blurred_chans = []
-            for c in range(self.n_chans):
-                blurred_chan = tf.nn.conv3d(tf.expand_dims(chans_list[c], axis=-1), self.blur_kernel,
-                                         strides=[1, 2, 2, 2, 1], padding='SAME')
-                blurred_chans.append(blurred_chan[:, :, :, :, 0])
-            blurred = tf.stack(blurred_chans, axis=-1)
-            #blurred = tf.nn.conv3d(inputs, self.blur_kernel, strides=[1, 2, 2, 2, 1], padding='SAME')
-        return blurred
-
-
-    def compute_output_shape(self, input_shape):
-        return tuple([input_shape[0]] + [s/2 for s in input_shape[1:-1]] + [self.n_chans])
-
-
 class RandFlow_Uniform(Layer):
     def __init__(self, img_shape, blur_sigma, flow_amp, **kwargs):
         super(RandFlow_Uniform, self).__init__(**kwargs)
@@ -287,7 +410,7 @@ class RandFlow_Uniform(Layer):
 
         self.flow_shape = img_shape[:-1] + (n_dims,)
 
-        blur_kernel = image_utils.create_gaussian_kernel(blur_sigma, n_dims=n_dims, n_sigmas_per_side=4)
+        blur_kernel = create_gaussian_kernel(blur_sigma, n_dims=n_dims, n_sigmas_per_side=4)
         # TODO: make this work for 3D
         if n_dims==2:
             blur_kernel = np.tile(np.reshape(blur_kernel, blur_kernel.shape + (1,1)), tuple([1]*n_dims) + (n_dims, 1))
@@ -340,7 +463,7 @@ class BlurFlow(Layer):
 
         self.flow_shape = tuple(img_shape[:-1]) + (n_dims,)
 
-        blur_kernel = image_utils.create_gaussian_kernel(blur_sigma, n_dims=n_dims, n_sigmas_per_side=2)
+        blur_kernel = create_gaussian_kernel(blur_sigma, n_dims=n_dims, n_sigmas_per_side=2)
         # TODO: make this work for 3D
         if n_dims == 2:
             blur_kernel = np.tile(np.reshape(blur_kernel, blur_kernel.shape + (1, 1)),
@@ -379,7 +502,7 @@ class RandFlow(Layer):
         self.flow_shape = img_shape[:-1] + (n_dims,)
 
         if blur_sigma > 0:
-            blur_kernel = image_utils.create_gaussian_kernel(blur_sigma, n_dims=n_dims)
+            blur_kernel = create_gaussian_kernel(blur_sigma, n_dims=n_dims)
             # TODO: make this work for 3D
             if n_dims == 2:
                 blur_kernel = np.tile(np.reshape(blur_kernel, blur_kernel.shape + (1, 1)),
@@ -392,7 +515,6 @@ class RandFlow(Layer):
         self.flow_sigma = flow_sigma
         self.normalize_max = normalize_max
         self.n_dims = n_dims
-        print('Randflow dims: {}'.format(self.n_dims))
 
     def build(self, input_shape):
         self.built = True
@@ -431,41 +553,6 @@ class RandFlow(Layer):
         return tuple(input_shape[:-1] + (self.n_dims,))
 
 
-class DilateAndBlur(Layer):
-    def __init__(self, img_shape, dilate_kernel_size, blur_sigma, flow_sigma, **kwargs):
-        super(DilateAndBlur, self).__init__(**kwargs)
-        n_dims = len(img_shape) - 1
-
-        self.flow_shape = img_shape[:-1] + (n_dims,)
-
-        dilate_kernel = np.reshape(
-                cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilate_kernel_size, dilate_kernel_size)),
-                (dilate_kernel_size, dilate_kernel_size, 1, 1))
-        self.dilate_kernel = tf.constant(dilate_kernel, dtype=tf.float32)
-
-        blur_kernel = image_utils.create_gaussian_kernel(blur_sigma, n_dims=n_dims)
-        blur_kernel = np.reshape(blur_kernel, blur_kernel.shape + (1, 1))
-        blur_kernel = blur_kernel / np.max(blur_kernel)  # normalize by max instead of by sum
-
-        self.blur_kernel = tf.constant(blur_kernel, dtype=tf.float32)
-        self.flow_sigma = flow_sigma
-
-
-    def build(self, input_shape):
-        self.built = True
-
-    def call(self, inputs):
-        errormap = inputs[0]
-        dilated_errormap = tf.nn.conv2d(errormap, self.dilate_kernel, strides=[1, 1, 1, 1], padding='SAME')
-        blurred_errormap = tf.nn.conv2d(dilated_errormap, self.blur_kernel, strides=[1, 1, 1, 1], padding='SAME')
-        blurred_errormap = K.cast(blurred_errormap / (1e-5 + tf.reduce_max(blurred_errormap)) * self.flow_sigma, dtype='float32')
-        min_map = tf.tile(inputs[1][:,tf.newaxis, tf.newaxis,:],
-                tf.concat([
-                        [1], tf.gather(tf.shape(blurred_errormap), [1,2,3])
-                ], 0))
-        blurred_errormap = tf.maximum(min_map, blurred_errormap)
-        return blurred_errormap
-
 ##############################################################################
 # Spatial transform model wrapper
 ##############################################################################
@@ -492,19 +579,17 @@ def segmenter_unet(img_shape, n_labels, params, model_name='segmenter_unet', act
         params['nf_dec'] = list(reversed(params['nf_enc']))
 
     if n_dims == 2:
-        x = basic_networks.unet2D(x_in, img_shape, n_labels,
-                                  nf_enc=params['nf_enc'],
-                                  nf_dec=params['nf_dec'],
-                                  n_convs_per_stage=params['n_convs_per_stage'],
-                                  use_maxpool=params['use_maxpool'],
-                                  use_residuals=params['use_residuals'])
+        x = unet2D(x_in, img_shape, n_labels,
+                   nf_enc=params['nf_enc'],
+                   nf_dec=params['nf_dec'],
+                   n_convs_per_stage=params['n_convs_per_stage']
+                   )
     elif n_dims == 3:
-        x = basic_networks.unet3D(x_in, img_shape, n_labels,
-                                  nf_enc=params['nf_enc'],
-                                  nf_dec=params['nf_dec'],
-                                  n_convs_per_stage=params['n_convs_per_stage'],
-                                  use_maxpool=params['use_maxpool'],
-                                  use_residuals=params['use_residuals'])
+        x = unet3D(x_in, img_shape, n_labels,
+                   nf_enc=params['nf_enc'],
+                   nf_dec=params['nf_dec'],
+                   n_convs_per_stage=params['n_convs_per_stage'],
+                   )
 
     if activation is not None:
         seg = Activation(activation)(x)
