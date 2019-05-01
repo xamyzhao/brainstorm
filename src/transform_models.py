@@ -586,8 +586,6 @@ class TransformModelTrainer(experiment_base.Experiment):
         X, Y, X_oh, Y_oh = next(self.train_gen)
 
         start = time.time()
-        print([x.shape for x in X])
-        print([y.shape for y in Y])
         loss_vals = self.transform_model.train_on_batch(X, Y)
 
         if self.do_profile:
@@ -622,8 +620,8 @@ class TransformModelTrainer(experiment_base.Experiment):
         return (total_test_loss / float(n_test_batches)).tolist(), loss_names
 
 
-    def _make_results_im(self, max_batch_size=32):
-        inputs, targets, ids_source, ids_target = next(self.train_gen)
+    def _make_results_im(self, data_gen, max_batch_size=32):
+        inputs, targets, ids_source, ids_target = next(data_gen)
         preds = self.transform_model.predict(inputs)
 
         input_im_batches = inputs[:2]
