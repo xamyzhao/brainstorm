@@ -165,6 +165,24 @@ if __name__ == '__main__':
             save_every_n_epochs = 10
 
             named_arch_params = {
+                'flow-fwd': {
+                    'model_arch': 'flow_fwd',
+                    'save_every': 10,
+                    'test_every': 25,
+                    'transform_reg_flow': 'grad_l2', 'transform_reg_lambda_flow': 1,
+                    'recon_loss_Iw': 'cc_vm',
+                    'cc_loss_weight': 1, 'cc_win_size_Iw': 9,
+                    'end_epoch': 500,
+                },
+                'flow-bck': {
+                    'model_arch': 'flow_bck',
+                    'save_every': 10,
+                    'test_every': 25,
+                    'transform_reg_flow': 'grad_l2', 'transform_reg_lambda_flow': 1,
+                    'recon_loss_Iw': 'cc_vm',
+                    'cc_loss_weight': 1, 'cc_win_size_Iw': 9,
+                    'end_epoch': 500,
+                },
                 'flow-bidir': {
                     'model_arch': 'flow_bidir_separate',
                     'save_every' : 10,

@@ -301,7 +301,22 @@ class TransformModelTrainer(experiment_base.Experiment):
 
     def _create_flow_model(self):
         # parse the flow architecture name to create the correct model
-        if 'bidir_separate' in self.arch_params['model_arch']:
+        if 'flow_fwd' in self.arch_params['model_arch'] \
+                or 'flow_bck' in self.arch_params['model_arch']:
+            # train a fwd model only
+            nf_enc = [16, 32, 32, 32]
+            nf_dec = [32, 32, 32, 32, 32, 16, 16]
+
+            self.transform_model = networks.cvpr2018_net(
+                vol_size=(160, 192, 224),
+                enc_nf=nf_enc,
+                dec_nf=nf_dec,
+                indexing='xy'
+            )
+            self.transform_model.name = self.arch_params['model_arch']
+
+            self.models = [self.transform_model]
+        elif 'bidir_separate' in self.arch_params['model_arch']:
             # train a fwd model and back model
             nf_enc = [16, 32, 32, 32]
             nf_dec = [32, 32, 32, 32, 32, 16, 16]
@@ -499,11 +514,24 @@ class TransformModelTrainer(experiment_base.Experiment):
             source_aux_inputs = self.contours_source_train
 
         while True:
+            # if there is more than one source volume, sample it
             if self.X_source_train.shape[0] > 1:
                 X_source, segs_source, source_aux_inputs, id_source = next(source_vol_gen)
 
+            # sample a random target volume
             X_target, _, _, id_target = next(target_vol_gen)
-            if 'color' in self.arch_params['model_arch']:
+
+            if self.arch_params['model_arch'] == 'flow_fwd':
+                inputs = [X_source, X_target]
+                targets = [X_target, X_target] # target, flow reg
+            elif self.arch_params['model_arch'] == 'flow_bck':
+                inputs = [X_target, X_source]
+                targets = [X_source, X_source]  # source, flow reg
+            elif self.arch_params['model_arch'] == 'flow_bidir_separate':
+                inputs = [X_source, X_target]
+                # forward target, backward target, forward flow reg, backward flow reg
+                targets = [X_target, X_source, X_target, X_source]
+            elif 'color' in self.arch_params['model_arch']:
                 if self.X_source_train.shape[0] > 1 and self.recon_loss_name == 'l2-src' \
                         or self.recon_loss_name == 'l2-tgt':
                     # more than one atlas, so we need to back-warp depending on our atlas
@@ -521,13 +549,7 @@ class TransformModelTrainer(experiment_base.Experiment):
                     _, flow_batch = self.flow_fwd_model.predict([X_source, X_target])
                     # reconstruction loss in the target space
                     inputs += [flow_batch]
-            else:
-                inputs = [X_source, X_target]
 
-            if 'bidir' in self.arch_params['model_arch']:
-                # forward target, backward target, forward flow reg, backward flow reg
-                targets = [X_target, X_source, X_target, X_source]
-            else:
                 targets = [X_target] * 3 # one dummy input at the end for the aux labels
 
             if not return_ids:
