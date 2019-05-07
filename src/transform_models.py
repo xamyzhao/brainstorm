@@ -163,10 +163,12 @@ class TransformModelTrainer(experiment_base.Experiment):
             loss_weights = [self.recon_loss_wt, self.transform_reg_wt]
             self.loss_names = [self.recon_loss_name, self.transform_reg_name]
         else:
+            # appearance transform model outputs: transformed, transform, auxiliary data
+
             # dummy loss at the end for aux inputs so that we can do regularization
-            loss_fns = [self.transform_reg_fn, self.recon_loss_fn, keras_metrics.mean_squared_error]
-            loss_weights = [self.transform_reg_wt, self.recon_loss_wt, 0.]
-            self.loss_names = [self.transform_reg_name, self.recon_loss_name, 'dummy_aux']
+            loss_fns = [self.recon_loss_fn, self.transform_reg_fn, keras_metrics.mean_squared_error]
+            loss_weights = [self.recon_loss_wt, self.transform_reg_wt, 0.]
+            self.loss_names = [self.recon_loss_name, self.transform_reg_name, 'dummy_aux']
 
 
         self.logger.debug('Transform model')
@@ -539,18 +541,16 @@ class TransformModelTrainer(experiment_base.Experiment):
                     # we still need to give the color model the src-space target
                     X_target_srcspace = self.flow_bck_model.predict([X_target, X_source])[0]
 
+                inputs = [X_source, X_target_srcspace, source_aux_inputs]
 
-                if self.arch_params['do_include_aux_input']:
-                    inputs = [X_source, X_target_srcspace, source_aux_inputs]
-                else:
-                    inputs = [X_source, X_target_srcspace]
+                # target image, and two dummy outputs for the transform and aux labels, 
+                # which we will use when we compute the regularization loss
+                targets = [X_target] * 3 
 
                 if self.recon_loss_name == 'l2-tgt':
                     _, flow_batch = self.flow_fwd_model.predict([X_source, X_target])
                     # reconstruction loss in the target space
                     inputs += [flow_batch]
-
-                targets = [X_target] * 3 # one dummy input at the end for the aux labels
 
             if not return_ids:
                 yield inputs, targets
@@ -637,9 +637,10 @@ class TransformModelTrainer(experiment_base.Experiment):
 
         if 'bidir' in self.arch_params['model_arch']:
             # fwd flow, fwd transformed im
-            input_im_batches += [preds[i] for i in [2, 0]]
+            input_im_batches += [preds[2], preds[0]]
         else:
-            input_im_batches += preds[:2]
+            # spatial and appearance transforom models both output [transformed, transform, ...]
+            input_im_batches += [preds[1], preds[0]]
         labels += ['transform', 'transformed']
 
         # if we are learning a color transform, normalize it for display purposes

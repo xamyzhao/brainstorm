@@ -197,13 +197,15 @@ if __name__ == '__main__':
                     'save_every': 5,
                     'test_every': 5,
                     'flow_fwd_model': ('experiments/' # only used if we are computing recon loss in tgt space
-                        'voxelmorph/vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'),
+                        'TransformModel_mri_source-atlas_0l_100ul_flow_fwd_grad_l2-regfwt1_cc_vm-win9-wt1/'
+                        'models/flow_fwd_epoch500_iter3500.h5'),
                     'flow_bck_model': ('experiments/'
-                        'voxelmorph/vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'),
+                        'TransformModel_mri_source-atlas_0l_100ul_flow_bck_grad_l2-regfwt1_cc_vm-win9-wt1/'
+                        'models/flow_bck_epoch500_iter3500.h5'),
                     'transform_reg_color': 'grad-seg-l2', 'transform_reg_lambda_color': 1,
                     'color_transform_in_tgt_space': False,
                     'do_include_aux_input': False,
-                    'recon_loss_I': 'l2-tgt',
+                    'recon_loss_I': 'l2-tgt', # compute reconstruction loss (L2) in target space
                     'recon_loss_wt': 50,
                     'end_epoch': 20,
                     'use_aux_reg': 'contours',

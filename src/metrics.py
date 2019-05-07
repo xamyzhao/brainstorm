@@ -2,6 +2,31 @@ import numpy as np
 import tensorflow as tf
 
 
+class SpatialSegmentSmoothness(object):
+    def __init__(self, n_chans, n_dims,
+                 warped_contours_layer_output=None,
+                 lambda_i=1.
+                 ):
+        self.n_dims = n_dims
+        self.warped_contours_layer_output = warped_contours_layer_output
+        self.lambda_i = lambda_i
+
+    def compute_loss(self, y_true, y_pred):
+        loss = 0
+        segments_mask = 1. - self.warped_contours_layer_output
+
+        for d in range(self.n_dims):
+            # we use x to indicate the current spatial dimension, not just the first
+            dCdx = tf.gather(y_pred, tf.range(1, tf.shape(y_pred)[d + 1]), axis=d + 1) \
+                   - tf.gather(y_pred, tf.range(0, tf.shape(y_pred)[d + 1] - 1), axis=d + 1)
+
+            # average across spatial dims and color channels
+            loss += tf.reduce_mean(
+                tf.abs(
+                    dCdx * tf.gather(segments_mask, tf.range(1, tf.shape(y_pred)[d+1]), axis=d+1)
+                ))
+        return loss
+
 class SpatialIntensitySmoothness(object):
     def __init__(self, n_dims,
                  use_true_gradients=True, pred_image_output=None,

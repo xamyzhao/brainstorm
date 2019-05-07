@@ -246,11 +246,13 @@ def color_delta_unet_model(img_shape,
                            ):
     x_src = Input(img_shape, name='input_src')
     x_tgt = Input(img_shape, name='input_tgt')
+    inputs = [x_src, x_tgt]
+
     if aux_input_shape is None:
         aux_input_shape = img_shape
 
     x_seg = Input(aux_input_shape, name='input_src_aux')
-    inputs = [x_src, x_tgt, x_seg]
+    inputs += [x_seg]
 
     if do_warp_to_target_space: # warp transformed vol to target space in the end
         n_dims = len(img_shape) - 1
@@ -289,10 +291,10 @@ def color_delta_unet_model(img_shape,
     if do_warp_to_target_space:
         transformed_out = SpatialTransformer(indexing='xy')([transformed_out, flow_srctotgt])
 
-    # kind of silly, but do a reshape so keras doesnt complain about returning an input
+    # hacky, but do a reshape so keras doesnt complain about returning an input
     x_seg = Reshape(aux_input_shape, name='aux')(x_seg)
 
-    return Model(inputs=inputs, outputs=[color_delta, transformed_out, x_seg], name=model_name)
+    return Model(inputs=inputs, outputs=[transformed_out, color_delta, x_seg], name=model_name)
 
 
 ##############################################################################
