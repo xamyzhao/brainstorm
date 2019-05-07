@@ -1,12 +1,14 @@
 # brainstorm
-This repository contains the authors' implementation from "Data Augmentation using Learned Transformations for One-shot Medical Image Segmentation". The work will be presented as an oral at CVPR 2019. 
+This repository contains the authors' implementation from 
+"Data Augmentation using Learned Transformations for One-shot Medical Image Segmentation", which will be 
+presented as an oral at CVPR 2019. We provide code for training spatial and appearance transform models, and for using 
+the transform models to synthesize training examples for segmentation.   
 
-Paper: [arXiv link](http://arxiv.org/abs/1902.09383)
 
 If you use our code, please cite:
 
 **Data augmentation using learned transforms for one-shot medical image segmentation**  
-[Amy Zhao](people.csail.mit.edu/xamyzhao), [Guha Balakrishnan](people.csail.mit.edu/balakg/), [Fredo Durand](people.csail.mit.edu/fredo), [John Guttag](people.csail.mit.edu/guttag), [Adrian V. Dalca](adalca.mit.edu)  
+[Amy Zhao](https://people.csail.mit.edu/xamyzhao), [Guha Balakrishnan](https://people.csail.mit.edu/balakg/), [Fredo Durand](https://people.csail.mit.edu/fredo), [John Guttag](https://people.csail.mit.edu/guttag), [Adrian V. Dalca](adalca.mit.edu)  
 CVPR 2019. [eprint arXiv:1902.09383](https://arxiv.org/abs/1902.09383)
 
 
@@ -32,10 +34,12 @@ This repo does not include any pre-trained models. You may train your own
 spatial and appearance transform models by specifying the GPU ID, dataset name, and the model type.
 
 ```
-python main.py trans --gpu 0 --data mri-100unlabeled --model flow-bidir
+python main.py trans --gpu 0 --data mri-100unlabeled --model flow-fwd
+python main.py trans --gpu 0 --data mri-100unlabeled --model flow-bck
 python main.py trans --gpu 0 --data mri-100unlabeled --model color-unet
 ```
-The results will be placed in `experiments/`.
+The results will be placed in `experiments/`. Note that in order to train an appearance/color transform model, you will need
+ to edit `main.py` to point at your trained forward/backward spatial transform models.
 
 
 As described in the paper, each model is implemented using a simple architecture based on [U-Net](https://arxiv.org/abs/1505.04597).
