@@ -575,7 +575,7 @@ class SegmenterTrainer(experiment_base.Experiment):
 
                 #if 'l2-tgt' in self.arch_params['tm_color_model']:
                 X_colortgt_src, _ = self.flow_bck_aug_model.predict([X_colortgt, source_X])
-                color_delta, colored_vol, _ = self.color_aug_model.predict([source_X, X_colortgt_src, source_contours])
+                colored_vol, color_delta, _ = self.color_aug_model.predict([source_X, X_colortgt_src, source_contours])
                 self.aug_colored = colored_vol
 
                 _, flow = self.flow_aug_model.predict([source_X, X_flowtgt])
