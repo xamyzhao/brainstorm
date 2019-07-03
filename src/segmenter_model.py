@@ -573,12 +573,16 @@ class SegmenterTrainer(experiment_base.Experiment):
 
                 self.aug_target = X_flowtgt
 
-                #if 'l2-tgt' in self.arch_params['tm_color_model']:
+                # compute forward flow, which we will use for the spatial transformation
+                _, flow = self.flow_aug_model.predict([source_X, X_flowtgt])
+
+                # warp color target back to the atlas space so that we can compute the color transformation
                 X_colortgt_src, _ = self.flow_bck_aug_model.predict([X_colortgt, source_X])
-                colored_vol, color_delta, _ = self.color_aug_model.predict([source_X, X_colortgt_src, source_contours])
+                colored_vol, color_delta, _ = self.color_aug_model.predict([source_X, X_colortgt_src, source_contours, flow])
+
                 self.aug_colored = colored_vol
 
-                _, flow = self.flow_aug_model.predict([source_X, X_flowtgt])
+                # color the source volume, and then apply the spatial transformation
                 X_aug = self.vol_warp_model.predict([colored_vol, flow])
 
                 if self.do_profile:
