@@ -13,7 +13,14 @@ CVPR 2019. [eprint arXiv:1902.09383](https://arxiv.org/abs/1902.09383)
 
 
 # Getting started
-## Download dependencies
+## Prerequisites
+To run this code, you will need:
+* Python 3.6+ (Python 2.7 may work but has not been tested)
+* CUDA 10.0+
+* Tensorflow 1.13+ and Keras 2.2.4+
+* one GPU with 12 GB of memory (we used a single NVIDIA Titan X)
+
+## Download module dependencies
 Run the script setup.sh. This will automatically pull the following dependencies and place them in the correct subdirectories:
 
 * https://github.com/adalca/neuron (for SpatialTransformer layer)
