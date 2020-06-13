@@ -196,12 +196,8 @@ if __name__ == '__main__':
                     'model_arch': 'color_unet',
                     'save_every': 5,
                     'test_every': 5,
-                    'flow_fwd_model': ('experiments/' # only used if we are computing recon loss in tgt space
-                        'TransformModel_mri_source-atlas_0l_100ul_flow_fwd_grad_l2-regfwt1_cc_vm-win9-wt1/'
-                        'models/flow_fwd_epoch500_iter3500.h5'),
-                    'flow_bck_model': ('experiments/'
-                        'TransformModel_mri_source-atlas_0l_100ul_flow_bck_grad_l2-regfwt1_cc_vm-win9-wt1/'
-                        'models/flow_bck_epoch500_iter3500.h5'),
+                    'flow_fwd_model': 'trained_models/spatial_transform_model.h5',
+                    'flow_bck_model': 'trained_models/spatial_transform_model_bck.h5',
                     'transform_reg_color': 'grad-seg-l2', 'transform_reg_lambda_color': 1,
                     'color_transform_in_tgt_space': False,
                     'do_include_aux_input': False,

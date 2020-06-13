@@ -6,9 +6,9 @@ import sys
 import time
 
 import cv2
-import keras.metrics as keras_metrics
-from keras.models import Model
-from keras.optimizers import Adam
+import tensorflow.keras.metrics as keras_metrics
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.optimizers import Adam
 import numpy as np
 
 from src import mri_loader, utils
@@ -386,7 +386,6 @@ class SegmenterTrainer(experiment_base.Experiment):
             self.flow_rand_aug_model.summary(print_fn=self.logger.debug)
 
         if self.aug_tm or self.aug_sas:
-            from keras.models import load_model
             self.flow_aug_model = load_model(
                 self.arch_params['tm_flow_model'],
                 custom_objects={
@@ -698,8 +697,6 @@ class SegmenterTrainer(experiment_base.Experiment):
 
 
     def create_models(self):
-        from keras.models import Model
-
         print('Creating segmenter model on pred shape {}'.format(self.pred_img_shape))
         self.base_segmenter_model = networks.segmenter_unet(
             img_shape=self.pred_img_shape,

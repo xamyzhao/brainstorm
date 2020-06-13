@@ -1,12 +1,12 @@
 import functools
 import json
 import os
-import sys
 import time
 
-import keras.metrics as keras_metrics
 import numpy as np
-from keras.optimizers import Adam
+import tensorflow.keras.metrics as keras_metrics
+from tensorflow.keras.models import load_model
+from tensorflow.keras.optimizers import Adam
 
 from src import experiment_base, mri_loader, networks, utils
 from src import metrics as my_metrics
@@ -225,8 +225,6 @@ class TransformModelTrainer(experiment_base.Experiment):
         self.source_test_files = self.source_train_files
 
         if 'color' in self.arch_params['model_arch']:
-
-            from keras.models import load_model
             self.flow_fwd_model = load_model(
                 self.arch_params['flow_fwd_model'],
                 custom_objects={
@@ -313,9 +311,9 @@ class TransformModelTrainer(experiment_base.Experiment):
                 vol_size=(160, 192, 224),
                 enc_nf=nf_enc,
                 dec_nf=nf_dec,
-                indexing='xy'
+                indexing='xy',
+                name=self.arch_params['model_arch']
             )
-            self.transform_model.name = self.arch_params['model_arch']
 
             self.models = [self.transform_model]
         elif 'bidir_separate' in self.arch_params['model_arch']:
@@ -327,9 +325,9 @@ class TransformModelTrainer(experiment_base.Experiment):
                 vol_size=(160, 192, 224),
                 enc_nf=nf_enc,
                 dec_nf=nf_dec,
-                indexing='xy'
+                indexing='xy',
+                name='vm_bidir_bck_model'
             )
-            self.flow_bck_model.name = 'vm_bidir_bck_model'
             self.flow_models = [self.flow_bck_model]
 
             # vm2 model
@@ -337,9 +335,9 @@ class TransformModelTrainer(experiment_base.Experiment):
                 vol_size=(160, 192, 224),
                 enc_nf=nf_enc,
                 dec_nf=nf_dec,
-                indexing='xy'
+                indexing='xy',
+                name='vm_bidir_fwd_model'
             )
-            self.flow_fwd_model.name = 'vm_bidir_fwd_model'
 
             self.transform_model = networks.bidir_wrapper(
                 img_shape=self.img_shape,
@@ -352,7 +350,6 @@ class TransformModelTrainer(experiment_base.Experiment):
             raise NotImplementedError('Only separate bidirectional spatial transform models are implemented in this version!')
 
         if 'init_weights_from' in self.arch_params.keys():
-            from keras.models import load_model
             # this is not the right indexing, but it doesnt matter since we are only loading conv weights
             init_weights_from_models = [
                 load_model(

@@ -1,22 +1,20 @@
-import os
-import sys
-
 import numpy as np
 import tensorflow as tf
 
-from keras import backend as K
-from keras.layers.advanced_activations import LeakyReLU
-from keras.layers import Input, Lambda, Reshape, Activation
-from keras.layers import Conv2D, Cropping2D, MaxPooling2D, UpSampling2D, ZeroPadding2D
-from keras.layers import Conv3D, Cropping3D, MaxPooling3D, UpSampling3D, ZeroPadding3D
+from tensorflow.keras import backend as K
+from tensorflow.keras.initializers import RandomNormal
+from tensorflow.keras.layers import Add, Concatenate
+from tensorflow.keras.layers import Input, Lambda, Reshape, Activation
+from tensorflow.keras.layers import Conv2D, Cropping2D, MaxPooling2D, UpSampling2D, ZeroPadding2D
+from tensorflow.keras.layers import Conv3D, Cropping3D, MaxPooling3D, UpSampling3D, ZeroPadding3D
+from tensorflow.keras.layers import LeakyReLU
 
-from keras.engine import Layer
-from keras.models import Model
+from tensorflow.keras.layers import Layer
+from tensorflow.keras.models import Model
 
 from ext.neuron.neuron.utils import volshape_to_ndgrid
 from ext.neuron.neuron.layers import SpatialTransformer
 
-from keras.layers import Add, Concatenate
 
 ##############################################################################
 # Basic networks
@@ -194,7 +192,7 @@ def _pad_or_crop_to_shape_3D(x, in_shape, tgt_shape):
 ##############################################################################
 # Spatial transform model
 ##############################################################################
-def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
+def cvpr2018_net(vol_size, enc_nf, dec_nf, indexing='ij', name="voxelmorph"):
     """
     From https://github.com/voxelmorph/voxelmorph.
 
@@ -207,8 +205,7 @@ def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
     :param dec_nf: list of decoder filters. right now it must be 1x6 (like voxelmorph-1) or 1x7 (voxelmorph-2)
     :return: the keras model
     """
-    import keras.layers as KL
-    from keras.initializers import RandomNormal
+    import tensorflow.keras.layers as KL
 
     ndims = len(vol_size)
     assert ndims==3, "ndims should be 3. found: %d" % ndims
@@ -229,7 +226,7 @@ def cvpr2018_net(vol_size, enc_nf, dec_nf, full_size=True, indexing='ij'):
     # warp the source with the flow
     y = SpatialTransformer(interp_method='linear', indexing=indexing)([src, flow])
     # prepare model
-    model = Model(inputs=[src, tgt], outputs=[y, flow])
+    model = Model(inputs=[src, tgt], outputs=[y, flow], name=name)
     return model
 
 

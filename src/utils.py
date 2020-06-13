@@ -1,16 +1,17 @@
+import math
 import os
 import re
-import sys
 
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import tensorflow as tf
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Activation
+from tensorflow.keras.optimizers import Adam
 import textwrap
 
-
 from src import networks
-
 
 import medipy.metrics as medipy_metrics
 import pynd.segutils as pynd_segutils
@@ -401,9 +402,6 @@ def eval_seg_sas_from_gen(sas_model, atlas_vol, atlas_labels,
         indexing='xy',
     )
 
-    from keras.models import Model
-    from keras.layers import Input, Activation
-    from keras.optimizers import Adam
     n_labels = len(label_mapping)
 
     warped_in = Input(img_shape[0:-1] + (n_labels,))
@@ -803,3 +801,54 @@ def make_cmap_rainbow(nb_labels=256):
     colors = cv2.cvtColor(np.expand_dims(colors, 0).astype(np.uint8), cv2.COLOR_HSV2RGB).astype(np.float32)[0] / 255.0
     return colors
 
+def concatenate_with_pad(ims_list, pad_to_im_idx=None, axis=None, pad_val=0.):
+    padded_ims_list = pad_images_to_size(ims_list, pad_to_im_idx, ignore_axes=axis, pad_val=pad_val)
+    return np.concatenate(padded_ims_list, axis=axis)
+
+def pad_images_to_size(ims_list, pad_to_im_idx=None, ignore_axes=None, pad_val=0.):
+    if pad_to_im_idx is not None:
+        pad_to_shape = ims_list[pad_to_im_idx].shape
+    else:
+        im_shapes = np.reshape([im.shape for im in ims_list], (len(ims_list), -1))
+        pad_to_shape = np.max(im_shapes, axis=0).tolist()
+
+    if ignore_axes is not None:
+        if not isinstance(ignore_axes, list):
+            ignore_axes = [ignore_axes]
+        for a in ignore_axes:
+            pad_to_shape[a] = None
+
+    ims_list = [pad_or_crop_to_shape(im, pad_to_shape, border_color=pad_val) \
+        for i, im in enumerate(ims_list)]
+    return ims_list
+
+def pad_or_crop_to_shape(
+        I,
+        out_shape,
+        border_color=(255, 255, 255)):
+    if not isinstance(border_color, tuple):
+        n_chans = I.shape[-1]
+        border_color = tuple([border_color] * n_chans)
+
+    # an out_shape with a dimension value of None means just don't crop or pad in that dim
+    border_size = [out_shape[d] - I.shape[d]
+                   if out_shape[d] is not None else 0 for d in range(2)]
+
+    if border_size[0] > 0:
+        I = cv2.copyMakeBorder(I,
+                               int(math.floor(border_size[0] / 2.0)),
+                               int(math.ceil(border_size[0] / 2.0)), 0, 0,
+                               cv2.BORDER_CONSTANT, value=border_color)
+    elif border_size[0] < 0:
+        I = I[-int(math.floor(border_size[0] / 2.0)): I.shape[0]
+                                                      + int(math.ceil(border_size[0] / 2.0)), :, :]
+    if border_size[1] > 0:
+        I = cv2.copyMakeBorder(I, 0, 0,
+                               int(math.floor(border_size[1] / 2.0)),
+                               int(math.ceil(border_size[1] / 2.0)),
+                               cv2.BORDER_CONSTANT, value=border_color)
+    elif border_size[1] < 0:
+        I = I[:, -int(math.floor(border_size[1] / 2.0)): I.shape[1]
+                                                         + int(math.ceil(border_size[1] / 2.0)), :]
+
+    return I

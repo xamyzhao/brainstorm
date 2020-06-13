@@ -4,10 +4,10 @@ import sys
 import time
 
 import cv2
-import keras.backend as K
+import tensorflow.keras.backend as K
 import numpy as np
 import tensorflow as tf
-from keras.utils import generic_utils
+from tensorflow.keras import utils as keras_utils
 
 from src import experiment_base
 
@@ -16,10 +16,11 @@ import json
 def configure_gpus(gpus):
     # set gpu id and tf settings
     os.environ['CUDA_VISIBLE_DEVICES'] = ','.join([str(g) for g in gpus])
+
     config = tf.ConfigProto(allow_soft_placement=True)
     config.gpu_options.allow_growth = True
 
-    K.tensorflow_backend.set_session(tf.Session(config=config))
+    K.set_session(tf.Session(config=config))
 
 
 # loads a saved experiment using the saved parameters.
@@ -55,14 +56,13 @@ def load_experiment_from_dir(from_dir,
 def run_experiment(exp, run_args,
                    end_epoch,
                    save_every_n_epochs, test_every_n_epochs,
-                   early_stopping_eps=None):
+                   ):
     if run_args.debug:
         if run_args.epoch is not None:
             end_epoch = int(run_args.epoch) + 10
         else:
             end_epoch = 10
 
-        # TODO: find a better way to set default params in case our experiment doesnt use them?
         if hasattr(run_args, 'loadn') and run_args.loadn is None:
             run_args.loadn = 1
         elif not hasattr(run_args, 'loadn'):
@@ -129,8 +129,6 @@ def run_experiment(exp, run_args,
         test_every_n_epochs=test_every_n_epochs,
         tbw=tbw, file_stdout_logger=file_stdout_logger, file_logger=file_logger,
         run_args=run_args,
-        early_stopping_eps=early_stopping_eps,
-        run_metadata=None,
     )
 
     return exp_dir
@@ -141,8 +139,6 @@ def train_batch_by_batch(
         start_epoch, end_epoch, save_every_n_epochs, test_every_n_epochs,
         tbw, file_stdout_logger, file_logger,
         run_args,
-        early_stopping_eps,
-        run_metadata=None
 ):
     max_n_batch_per_epoch = 1000  # limits each epoch to batch_size * 1000 examples. i think this is ok.
     n_batch_per_epoch_train = min(max_n_batch_per_epoch, int(np.ceil(exp.get_n_train() / float(batch_size))))
@@ -162,11 +158,6 @@ def train_batch_by_batch(
     min_save_every_n_epochs = 10
     save_every_n_seconds = 20 * 60
 
-    #	print_n_batches_per_epoch = max(1, max_printed_examples / batch_size)
-    # we don't want more than 64 images printed per epoch
-    #	print_every = int(np.floor(
-    #					((n_batch_per_epoch_train-1) / print_n_batches_per_epoch) / 2)) * 2 + 1  # make this odd so we can print augmentations
-
     start_time = time.time()
 
     # do this once here to flush any setup information to the file
@@ -178,7 +169,7 @@ def train_batch_by_batch(
         if e < end_epoch:
             exp.update_epoch_count(e)
 
-        pb = generic_utils.Progbar(n_batch_per_epoch_train)
+        pb = keras_utils.Progbar(n_batch_per_epoch_train)
         printed_count = 0
         for bi in range(n_batch_per_epoch_train):
             joint_loss, joint_loss_names = exp.train_on_batch()
@@ -245,7 +236,7 @@ def train_batch_by_batch(
 
         if (e % auto_test_every_n_epochs == 0 or e % test_every_n_epochs == 0):
             file_stdout_logger.debug('{} testing'.format(exp.model_name))
-            pbt = generic_utils.Progbar(1)
+            pbt = keras_utils.Progbar(1)
 
             test_loss, test_loss_names = exp.test_batches()
 

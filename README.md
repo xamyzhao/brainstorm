@@ -45,8 +45,9 @@ python main.py trans --gpu 0 --data mri-100unlabeled --model flow-fwd
 python main.py trans --gpu 0 --data mri-100unlabeled --model flow-bck
 python main.py trans --gpu 0 --data mri-100unlabeled --model color-unet
 ```
-The results will be placed in `experiments/`. Note that in order to train an appearance/color transform model, you will need
- to edit `main.py` to point at your trained forward/backward spatial transform models.
+The results will be placed in `experiments/`. Note that in order to train an appearance/color transform model, you will want
+ to edit `main.py` to point at your trained forward/backward spatial transform models. We have provided pretrained forward/backward 
+ spatial transform models for testing.
 
 
 As described in the paper, each model is implemented using a simple architecture based on [U-Net](https://arxiv.org/abs/1505.04597).
