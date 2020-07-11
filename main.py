@@ -259,17 +259,17 @@ if __name__ == '__main__':
                     'pretrain_l2': 500,
                     'warpoh': False,
                     'tm_flow_model': ( # transform model (spatial) for augmentation
-                        'experiments/voxelmorph/'
-                        'vm2_cc_AtoUMS_100k_CStoUMS_xy_iter50000.h5'
+                        'trained_models/'
+                        'spatial_transform_model.h5'
                     ),
                     'tm_flow_bck_model': ( # transform model (spatial) for augmentation
-                        'experiments/voxelmorph/'
-                        'vm2_cc_AtoUMS_100k_UMStoCS_xy_iter50000.h5'
+                        'trained_models/'
+                        'spatial_transform_model_bck.h5'
                     ),
                     'tm_color_model': ( # transform model (appearance) for augmentation
-                        'experiments/'
-                        'TransformModel_mri-tr-vm-valid-vm_100ul_subj-l-OASIS_OAS1_0327_color_unet_grad-seg-l2_regcwt1_l2-tgt-wt50_1'
-                    '/models/color_delta_unet_epoch10_iter1000.h5'),
+                        'trained_models/'
+                        'appearance_transform_model.h5'
+                    ),
                 },
             }
 
