@@ -57,7 +57,7 @@ favorite model architecture, and to adjust the model parameters to suit your dat
 ## Training a segmentation network
 You may train a segmentation model by specifying the GPU ID and dataset name.
 ```
-python main.py fss --gpu 0 --data mri-100unlabeled
+python main.py seg --gpu 0 --data mri-100unlabeled
 ```
 Again, results will be placed under `experiments/`. 
 
