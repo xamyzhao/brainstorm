@@ -452,7 +452,7 @@ class SegmenterTrainer(experiment_base.Experiment):
 
 
                 X_target[i] = X_unlabeled
-                X_train_aug[i] = X_aug
+                X_train_aug[i] = X_unlabeled  # when using SAS, we use the predicted segmentations to "label" the original target volume
                 Y_train_aug[i] = Y_aug
                 ids_train_aug += ['sas_{}'.format(ul_id) for ul_id in ul_ids]
 
