@@ -429,8 +429,8 @@ class SegmenterTrainer(experiment_base.Experiment):
         if self.aug_sas:
             aug_name = 'SAS'
             # just label a bunch of examples using our SAS model, and then append them to the training set
-            source_X = self.X_labeled_train
-            source_Y = self.segs_labeled_train
+            X_source = self.X_labeled_train
+            Y_source = self.segs_labeled_train
 
             unlabeled_labeler_gen = self.dataset.gen_vols_batch(
                 dataset_splits=['unlabeled_train'],
@@ -442,15 +442,16 @@ class SegmenterTrainer(experiment_base.Experiment):
             ids_train_aug = []#['sas_aug_{}'.format(i) for i in range(self.n_aug)]
             for i in range(self.n_aug):
                 self.logger.debug('Pseudo-labeling UL example {} of {} using SAS!'.format(i, self.n_aug))
-                unlabeled_X, _, _, ul_ids = next(unlabeled_labeler_gen)
+                X_unlabeled, _, _, ul_ids = next(unlabeled_labeler_gen)
 
                 # warp labeled example to unlabeled example
-                X_aug, flow = self.flow_aug_model.predict([source_X, unlabeled_X])
+                X_aug, flow = self.flow_aug_model.predict([X_source, X_unlabeled])
 
                 # warp labeled segs similarly
-                Y_aug = self.seg_warp_model.predict([source_Y, flow])
+                Y_aug = self.seg_warp_model.predict([Y_source, flow])
 
-                X_target[i] = unlabeled_X
+
+                X_target[i] = X_unlabeled
                 X_train_aug[i] = X_aug
                 Y_train_aug[i] = Y_aug
                 ids_train_aug += ['sas_{}'.format(ul_id) for ul_id in ul_ids]
@@ -466,22 +467,22 @@ class SegmenterTrainer(experiment_base.Experiment):
                 show_slice_idx = 112
                 n_aug_batches = int(np.ceil(X_train_aug.shape[0] / float(print_batch_size)))
                 aug_out_im = []
+
                 for bi in range(min(20, n_aug_batches)):
                     X_target_batch = X_target[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :]
                     X_aug_batch = X_train_aug[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :]
                     Y_aug_batch = Y_train_aug[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :]
 
                     aug_im = utils.concatenate_with_pad([
-                        utils.label_ims(
-                            X_target_batch, []),
-                        utils.label_ims(
-                            X_aug_batch, []),
+                        utils.label_ims(np.tile(X_source[..., show_slice_idx, :], (X_target_batch.shape[0],) + (1,) * (len(X_source.shape) - 2))),
+                        utils.label_ims(X_target_batch),
+                        utils.label_ims(X_aug_batch),
                         utils.label_ims(
                             utils.overlay_segs_on_ims_batch(
                                 ims=X_aug_batch,
                                 segs=Y_aug_batch,
                                 include_labels=self.label_mapping,
-                                draw_contours=True, subjects_axis=0), []),
+                                draw_contours=True, subjects_axis=0)),
                     ], axis=1)
                     aug_out_im.append(aug_im)
                 aug_out_im = np.concatenate(aug_out_im, axis=0)
@@ -501,14 +502,14 @@ class SegmenterTrainer(experiment_base.Experiment):
         if use_single_atlas: # single atlas
             # single atlas, dont bother with generator
             self.logger.debug('Single atlas, not using source generator for augmenter')
-            source_X, source_segs, source_contours, source_ids = next(source_gen)
+            X_source, source_segs, source_contours, source_ids = next(source_gen)
         else:
             self.logger.debug('Multiple atlases, sampling source vols from generator')
 
         while True:
             if not use_single_atlas:
                 # randomly select an atlas from our source volume generator
-                source_X, source_segs, source_contours, source_ids = next(source_gen)
+                X_source, source_segs, source_contours, source_ids = next(source_gen)
 
             # keep track of which unlabeled subjects we are using in training
             ul_ids = []
@@ -523,7 +524,7 @@ class SegmenterTrainer(experiment_base.Experiment):
             color_delta = None
             start = time.time()
             if aug_batch_by == 'rand':
-                X_aug, flow = self.flow_rand_aug_model.predict(source_X)
+                X_aug, flow = self.flow_rand_aug_model.predict(X_source)
 
                 # color augmentation by additive or multiplicative factor. randomize the factor and then tile to correct shape
                 if 'offset_amp' in self.data_params['aug_params']:
@@ -558,11 +559,11 @@ class SegmenterTrainer(experiment_base.Experiment):
                 self.aug_target = X_flowtgt
 
                 # compute forward flow, which we will use for the spatial transformation
-                _, flow = self.flow_aug_model.predict([source_X, X_flowtgt])
+                _, flow = self.flow_aug_model.predict([X_source, X_flowtgt])
 
                 # warp color target back to the atlas space so that we can compute the color transformation
-                X_colortgt_src, _ = self.flow_bck_aug_model.predict([X_colortgt, source_X])
-                colored_vol, color_delta, _ = self.color_aug_model.predict([source_X, X_colortgt_src, source_contours, flow])
+                X_colortgt_src, _ = self.flow_bck_aug_model.predict([X_colortgt, X_source])
+                colored_vol, color_delta, _ = self.color_aug_model.predict([X_source, X_colortgt_src, source_contours, flow])
 
                 self.aug_colored = colored_vol
 
@@ -579,7 +580,7 @@ class SegmenterTrainer(experiment_base.Experiment):
                     self.profiler_logger.info('Warping labels took {}'.format(time.time() - st))
             else:
                 # no aug
-                X_aug = source_X
+                X_aug = X_source
                 Y_aug = source_segs
 
             if self.do_profile:
@@ -588,14 +589,14 @@ class SegmenterTrainer(experiment_base.Experiment):
             if do_slice_z:
                 # get a random slice in the z dimension
                 start = time.time()
-                n_total_slices = source_X.shape[-2]
+                n_total_slices = X_source.shape[-2]
 
                 # always take random slices in the z dimension
                 slice_idxs = np.random.choice(n_total_slices, self.batch_size, replace=True)
 
                 X_to_aug_slices = np.reshape(
                     np.transpose(  # roll z-slices into batch
-                        source_X[:, :, :, slice_idxs],
+                        X_source[:, :, :, slice_idxs],
                         (0, 3, 1, 2, 4)),
                     (-1,) + tuple(self.pred_img_shape))
 
@@ -653,7 +654,7 @@ class SegmenterTrainer(experiment_base.Experiment):
                         (-1,) + self.pred_img_shape)
             else:
                 # no slicing, no aug?
-                X_to_aug_slices = source_X
+                X_to_aug_slices = X_source
                 Y_to_aug_slices = source_segs
 
             if convert_onehot and not ((aug_by == 'rand' or aug_by == 'tm') and self.arch_params['warpoh']):
