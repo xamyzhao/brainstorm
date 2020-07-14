@@ -328,6 +328,9 @@ if __name__ == '__main__':
                 data_params['n_sas_aug'] = data_params['n_unlabeled']
                 data_params['aug_in_gen'] = False
 
+                if args.data_n_aug:
+                    data_params['n_sas_aug'] = args.data_n_aug
+
             if args.aug_tm or args.aug_sas or args.aug_rand:
                 test_every_n_epochs = 200
             else:

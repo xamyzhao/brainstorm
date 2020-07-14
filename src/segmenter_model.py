@@ -436,6 +436,7 @@ class SegmenterTrainer(experiment_base.Experiment):
                 dataset_splits=['unlabeled_train'],
                 batch_size=1, randomize=False, return_ids=True)
 
+            X_target = np.zeros((self.n_aug,) + self.aug_img_shape)
             X_train_aug = np.zeros((self.n_aug,) + self.aug_img_shape)
             Y_train_aug = np.zeros((self.n_aug,) + self.aug_img_shape[:-1] + (1,))
             ids_train_aug = []#['sas_aug_{}'.format(i) for i in range(self.n_aug)]
@@ -445,62 +446,46 @@ class SegmenterTrainer(experiment_base.Experiment):
 
                 # warp labeled example to unlabeled example
                 X_aug, flow = self.flow_aug_model.predict([source_X, unlabeled_X])
+
                 # warp labeled segs similarly
                 Y_aug = self.seg_warp_model.predict([source_Y, flow])
 
-                X_train_aug[i] = unlabeled_X
+                X_target[i] = unlabeled_X
+                X_train_aug[i] = X_aug
                 Y_train_aug[i] = Y_aug
                 ids_train_aug += ['sas_{}'.format(ul_id) for ul_id in ul_ids]
 
-        elif self.aug_tm and self.data_params['n_tm_aug'] is not None \
-                and self.data_params['n_tm_aug'] <= 100:
 
-            # TODO: this section is not well tested since it is no longer really used, we do even coupled
-            # augmentation in the generator
-            aug_name = 'tm'
-            source_train_gen_tmaug = self._generate_augmented_batch(
-                self.source_gen,
-                aug_by='tm',
-                use_single_atlas=self.X_labeled_train.shape[0] == 1
-            )
+            self.X_labeled_train = np.concatenate([self.X_labeled_train, X_train_aug], axis=0)
+            self.segs_labeled_train = np.concatenate([self.segs_labeled_train, Y_train_aug], axis=0)
+            self.ids_labeled_train += ids_train_aug
+            self.logger.debug('Added {} {}-augmented batches to training set!'.format(len(X_train_aug), aug_name))
 
-            # augment and append to training set
-            n_aug_batches = int(np.ceil(self.data_params['n_tm_aug'] / float(self.batch_size)))
+            if preview_augmented_examples:
+                print_batch_size = 10
+                show_slice_idx = 112
+                n_aug_batches = int(np.ceil(X_train_aug.shape[0] / float(print_batch_size)))
+                aug_out_im = []
+                for bi in range(min(20, n_aug_batches)):
+                    X_target_batch = X_target[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :]
+                    X_aug_batch = X_train_aug[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :]
+                    Y_aug_batch = Y_train_aug[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :]
 
-            X_preaug = [None] * n_aug_batches
-            Y_preaug = [None] * n_aug_batches
-            X_train_aug = [None] * n_aug_batches
-            Y_train_aug = [None] * n_aug_batches
-            ids_train_aug = []
-
-            for i in range(n_aug_batches):
-                # get source examples to perform augmentation on
-                X_preaug[i], Y_preaug[i], X_train_aug[i], Y_train_aug[i], aug_ids_batch = next(source_train_gen_tmaug)
-                ids_train_aug += aug_ids_batch
-
-            self.X_tm_aug = np.concatenate(X_train_aug, axis=0)[:self.data_params['n_tm_aug']]
-            self.Y_tm_aug = np.concatenate(Y_train_aug, axis=0)[:self.data_params['n_tm_aug']]
-
-        self.X_labeled_train = np.concatenate([self.X_labeled_train, X_train_aug], axis=0)
-        self.segs_labeled_train = np.concatenate([self.segs_labeled_train, Y_train_aug], axis=0)
-        self.ids_labeled_train += ids_train_aug
-        self.logger.debug('Added {} {}-augmented batches to training set!'.format(len(X_train_aug), aug_name))
-
-        if preview_augmented_examples:
-            print_batch_size = 10
-            show_slice_idx = 112
-            n_aug_batches = int(np.ceil(X_train_aug.shape[0] / float(print_batch_size)))
-            aug_out_im = []
-            for bi in range(min(20, n_aug_batches)):
-                aug_im = utils.concatenate_with_pad([
-                    utils.label_ims(
-                        X_train_aug[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :], []),
-                    utils.label_ims(
-                        Y_train_aug[bi * print_batch_size:min(X_train_aug.shape[0], (bi + 1) * print_batch_size), ..., show_slice_idx, :], []),
-                ], axis=1)
-                aug_out_im.append(aug_im)
-            aug_out_im = np.concatenate(aug_out_im, axis=0)
-            cv2.imwrite(os.path.join(self.exp_dir, 'aug_{}_examples.jpg'.format(aug_name)), aug_out_im)
+                    aug_im = utils.concatenate_with_pad([
+                        utils.label_ims(
+                            X_target_batch, []),
+                        utils.label_ims(
+                            X_aug_batch, []),
+                        utils.label_ims(
+                            utils.overlay_segs_on_ims_batch(
+                                ims=X_aug_batch,
+                                segs=Y_aug_batch,
+                                include_labels=self.label_mapping,
+                                draw_contours=True, subjects_axis=0), []),
+                    ], axis=1)
+                    aug_out_im.append(aug_im)
+                aug_out_im = np.concatenate(aug_out_im, axis=0)
+                cv2.imwrite(os.path.join(self.exp_dir, 'aug_{}_examples.jpg'.format(aug_name)), aug_out_im)
 
 
     def _generate_augmented_batch(
